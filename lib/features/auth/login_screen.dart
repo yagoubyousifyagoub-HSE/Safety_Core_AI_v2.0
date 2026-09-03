@@ -22,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isSendingCode = false;
   bool _isContinuingAsGuest = false;
+  bool _isEnteringLocalDemo = false;
   String? _errorText;
 
   @override
@@ -46,8 +47,8 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => OtpVerificationScreen(email: email)),
       );
-    } catch (_) {
-      setState(() => _errorText = l10n.otpSendFailed);
+    } catch (e) {
+      setState(() => _errorText = '${l10n.otpSendFailed}\n$e');
     } finally {
       if (mounted) setState(() => _isSendingCode = false);
     }
@@ -65,17 +66,27 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const DashboardScreen()),
       );
-    } catch (_) {
-      setState(() => _errorText = l10n.guestSignInFailed);
+    } catch (e) {
+      setState(() => _errorText = '${l10n.guestSignInFailed}\n$e');
     } finally {
       if (mounted) setState(() => _isContinuingAsGuest = false);
     }
   }
 
+  /// Skips Supabase entirely — no auth call, no network request of any
+  /// kind. Purely for exploring the UI/workflow when the backend is
+  /// unreachable (DNS issues, offline, first-run demoing, etc.).
+  void _enterLocalDemo() {
+    setState(() => _isEnteringLocalDemo = true);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const DashboardScreen(localDemo: true)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final busy = _isSendingCode || _isContinuingAsGuest;
+    final busy = _isSendingCode || _isContinuingAsGuest || _isEnteringLocalDemo;
 
     return Scaffold(
       body: SafeArea(
@@ -139,6 +150,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 6),
                   Text(
                     l10n.guestDisclaimer,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppColors.slate500, fontSize: 11),
+                  ),
+                  const SizedBox(height: 20),
+                  TextButton.icon(
+                    onPressed: busy ? null : _enterLocalDemo,
+                    icon: const Icon(Icons.phonelink_off_outlined, size: 18),
+                    label: Text(l10n.localDemoButton),
+                  ),
+                  Text(
+                    l10n.localDemoDisclaimer,
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: AppColors.slate500, fontSize: 11),
                   ),
