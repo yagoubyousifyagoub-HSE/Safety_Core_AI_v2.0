@@ -1,66 +1,48 @@
-name: Build Safety Core AI APK
+name: Build Android APK
 
+# Builds a release APK on every push to main, or manually via the
+# "Run workflow" button in the GitHub Actions tab.
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [main]
+  workflow_dispatch: {}
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: 1. Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 2. Setup Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: 3. Setup Flutter
+      - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          cache: true
 
-      - name: 4. Extract Zip Archive to Project Root
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localization files
+        run: flutter gen-l10n
+
+      - name: Build release APK
+        # SUPABASE_URL / SUPABASE_ANON_KEY come from this repo's
+        # Settings -> Secrets and variables -> Actions -> New repository secret.
+        # Never commit real keys directly into this file.
         run: |
-          mkdir -p temp_extract
-          unzip -o \*.zip -d temp_extract/
-          # البحث عن مكان pubspec.yaml ونقل ملفات المشروع كاملة للمسار الرئيسي
-          PROJECT_DIR=$(find temp_extract -type f -name "pubspec.yaml" -exec dirname {} \; | head -n 1)
-          if [ -n "$PROJECT_DIR" ]; then
-            cp -rf "$PROJECT_DIR"/* ./
-          fi
-          rm -rf temp_extract
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: 5. Ensure Android Platform & Fix Label
-        run: |
-          if [ ! -d "android" ]; then
-            flutter create safety_core_ai --platforms=android --org com.safetycore.ai
-            cp -r safety_core_ai/android ./
-            rm -rf safety_core_ai
-          fi
-          sed -i 's/android:label="[^"]*"/android:label="Safety Core AI"/g' android/app/src/main/AndroidManifest.xml || true
-
-      - name: 6. Install Dependencies
-        run: |
-          sed -i 's/intl:.*/intl: any/g' pubspec.yaml || true
-          flutter pub get
-
-      - name: 7. Generate Localization Files
-        run: |
-          if [ -f "l10n.yaml" ]; then
-            flutter gen-l10n || true
-          fi
-
-      - name: 8. Build Release APK
-        run: flutter build apk --release --no-tree-shake-icons
-
-      - name: 9. Upload Generated APK
+      - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SafetyCoreAI-Release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: safety-core-ai-release-apk
+          path: build/app/outputs/flutter-apk/Safety Core Ai.apk
+          retention-days: 30
