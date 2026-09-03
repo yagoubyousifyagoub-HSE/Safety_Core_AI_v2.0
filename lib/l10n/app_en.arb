@@ -13,6 +13,10 @@
   "continueAsGuest": "Continue as Guest",
   "guestDisclaimer": "Explore with sample data. Nothing you submit affects real projects.",
   "guestSignInFailed": "Couldn't start a guest session. Try again.",
+  "localDemoButton": "Local demo (no internet needed)",
+  "localDemoDisclaimer": "Static sample data, on this device only — works with zero connectivity.",
+  "localDemoBanner": "Local Demo Mode — never connects to the internet",
+  "savedLocalDemo": "Saved locally (Local Demo Mode never syncs to a server).",
 
   "verifyEmailTitle": "Verify your email",
   "otpInstructions": "Enter the 6-digit code sent to {email}",
