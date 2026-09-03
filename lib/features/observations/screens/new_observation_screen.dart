@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/models/observation_model.dart';
 import '../../../core/providers.dart';
 import '../../../core/services/connectivity_service.dart';
@@ -18,7 +19,17 @@ import '../../auth/auth_service.dart';
 
 class NewObservationScreen extends ConsumerStatefulWidget {
   final String projectName;
-  const NewObservationScreen({super.key, this.projectName = 'Site A — Main Contract'});
+
+  /// True when reached from Local Demo Mode — every network call in this
+  /// screen (geofence lookup, sync-to-Supabase) is skipped; the entry stays
+  /// purely in the local offline queue.
+  final bool isLocalDemo;
+
+  const NewObservationScreen({
+    super.key,
+    this.projectName = 'Site A — Main Contract',
+    this.isLocalDemo = false,
+  });
 
   @override
   ConsumerState<NewObservationScreen> createState() => _NewObservationScreenState();
@@ -58,18 +69,20 @@ class _NewObservationScreenState extends ConsumerState<NewObservationScreen> {
     );
 
     bool? insideGeofence;
-    try {
-      final boundary = await _fetchProjectBoundary(widget.projectName);
-      if (boundary != null) {
-        insideGeofence = GeofenceService(boundary).containsPoint(
-          lat: position.latitude,
-          lng: position.longitude,
-        );
+    if (!widget.isLocalDemo) {
+      try {
+        final boundary = await _fetchProjectBoundary(widget.projectName);
+        if (boundary != null) {
+          insideGeofence = GeofenceService(boundary).containsPoint(
+            lat: position.latitude,
+            lng: position.longitude,
+          );
+        }
+      } catch (_) {
+        // No boundary registered for this project, or offline lookup failed —
+        // fail open rather than blocking the field team from filing a report.
+        insideGeofence = null;
       }
-    } catch (_) {
-      // No boundary registered for this project, or offline lookup failed —
-      // fail open rather than blocking the field team from filing a report.
-      insideGeofence = null;
     }
 
     setState(() {
@@ -108,8 +121,10 @@ class _NewObservationScreenState extends ConsumerState<NewObservationScreen> {
       final photoFile = File('${dir.path}/${localId}_before.jpg');
       await photoFile.writeAsBytes(compressed.bytes);
 
-      final currentUserId = Supabase.instance.client.auth.currentUser?.id ?? 'unknown';
-      final isGuest = AuthService().isGuestSession;
+      final currentUserId = widget.isLocalDemo
+          ? AppConstants.localDemoUserId
+          : (Supabase.instance.client.auth.currentUser?.id ?? 'unknown');
+      final isGuest = !widget.isLocalDemo && AuthService().isGuestSession;
 
       final observation = Observation(
         localId: localId,
@@ -123,25 +138,31 @@ class _NewObservationScreenState extends ConsumerState<NewObservationScreen> {
         wasInsideGeofenceAtCapture: _isInsideGeofence ?? true,
         photoBeforeLocalPath: photoFile.path,
         createdByUserId: currentUserId,
-        // Guests self-assign so the demo lets them complete the full
-        // raise -> after-photo -> pendingVerification loop without needing
-        // a real consultant/contractor pairing (see the "guests sandboxed
-        // to demo project" RLS policies in schema.sql).
-        assignedContractorId: isGuest ? currentUserId : null,
+        // Guests and local-demo sessions self-assign so the demo lets them
+        // complete the full raise -> after-photo -> pendingVerification
+        // loop without needing a real consultant/contractor pairing (see
+        // the "guests sandboxed to demo project" RLS policies in schema.sql).
+        assignedContractorId: (isGuest || widget.isLocalDemo) ? currentUserId : null,
         createdAt: DateTime.now(),
         dueDate: DateTime.now().add(const Duration(days: 7)),
       );
 
       final syncService = ref.read(offlineSyncServiceProvider);
-      final isOnline = await ConnectivityService().isOnline();
-
       await syncService.enqueue(observation);
+
       String message;
-      if (isOnline) {
-        await syncService.trySyncAll();
-        message = l10n.submittedOnline;
+      if (widget.isLocalDemo) {
+        // Never attempt a network call — Local Demo Mode's entire point is
+        // to work with zero connectivity.
+        message = l10n.savedLocalDemo;
       } else {
-        message = l10n.savedOffline;
+        final isOnline = await ConnectivityService().isOnline();
+        if (isOnline) {
+          await syncService.trySyncAll();
+          message = l10n.submittedOnline;
+        } else {
+          message = l10n.savedOffline;
+        }
       }
 
       if (!mounted) return;
