@@ -23,19 +23,23 @@ jobs:
         with:
           channel: 'stable'
 
-      # خطوة توليد مجلد أندرويد الناقص دون المساس بأكواد المشروع
       - name: Ensure Android platform exists
         run: |
           if [ ! -d "android" ]; then
-            flutter create temp_shell --platforms=android --org com.safetycore.ai
-            cp -r temp_shell/android ./
-            rm -rf temp_shell
+            flutter create safety_core_ai --platforms=android --org com.safetycore.ai
+            cp -r safety_core_ai/android ./
+            rm -rf safety_core_ai
           fi
-          # تثبيت اسم التطبيق الرسمي
           sed -i 's/android:label="[^"]*"/android:label="Safety Core AI"/g' android/app/src/main/AndroidManifest.xml || true
 
-      - name: Install dependencies
+      - name: Fix Localization & Dependencies
         run: |
+          # استبدال مفاتيح الترجمة الناقصة بنصوص مباشرة لتفادي خطأ المترجم
+          sed -i "s/l10n\.localDemoButton/'دخول تجريبي سريع'/g" lib/features/auth/login_screen.dart || true
+          sed -i "s/l10n\.localDemoBanner/'وضع التجربة المحلي المباشر'/g" lib/features/dashboard/dashboard_screen.dart || true
+          sed -i "s/l10n\.savedLocalDemo/'تم حفظ الملاحظة محلياً بنجاح'/g" lib/features/observations/screens/new_observation_screen.dart || true
+          
+          # ضبط توافق مكتبة intl
           sed -i 's/intl:.*/intl: any/g' pubspec.yaml || true
           flutter pub get
 
@@ -45,8 +49,8 @@ jobs:
       - name: Build release APK
         run: |
           flutter build apk --release --no-tree-shake-icons \
-            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
 
       - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
