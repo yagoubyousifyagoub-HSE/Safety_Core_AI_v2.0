@@ -17,10 +17,15 @@ class ObservationClosureScreen extends ConsumerStatefulWidget {
   final Observation observation;
   final UserRole currentUserRole;
 
+  /// True when reached from Local Demo Mode — skips the network sync
+  /// attempt entirely, same as [NewObservationScreen.isLocalDemo].
+  final bool isLocalDemo;
+
   const ObservationClosureScreen({
     super.key,
     required this.observation,
     required this.currentUserRole,
+    this.isLocalDemo = false,
   });
 
   @override
@@ -103,7 +108,7 @@ class _ObservationClosureScreenState extends ConsumerState<ObservationClosureScr
   Future<void> _persist(Observation observation) async {
     final syncService = ref.read(offlineSyncServiceProvider);
     await syncService.enqueue(observation);
-    if (await ConnectivityService().isOnline()) {
+    if (!widget.isLocalDemo && await ConnectivityService().isOnline()) {
       await syncService.trySyncAll();
     }
   }
