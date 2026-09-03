@@ -1,9 +1,12 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/models/observation_model.dart';
+import '../../core/providers.dart';
+import '../../core/services/local_demo_data.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../about/screens/about_app_screen.dart';
 import '../auth/auth_service.dart';
@@ -14,23 +17,40 @@ import '../observations/widgets/status_chip.dart';
 import '../observations/widgets/sync_badge.dart';
 import 'kpi_calculator.dart';
 
-class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({super.key});
+class DashboardScreen extends ConsumerStatefulWidget {
+  /// When true, this screen never touches Supabase — no Auth session, no
+  /// Realtime stream, no network call of any kind. Data is a static local
+  /// sample set plus anything already sitting in the offline Hive queue.
+  /// This exists specifically so the app can be explored end-to-end when
+  /// the backend is unreachable (DNS issues, no connectivity, first-run
+  /// demoing without a configured Supabase project, etc.).
+  final bool localDemo;
 
+  const DashboardScreen({super.key, this.localDemo = false});
+
+  @override
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   static const String _emergencyHotline = '+966500000000'; // replace with site HSE hotline
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final client = Supabase.instance.client;
     final authService = AuthService();
-    final isGuest = authService.isGuestSession;
+    final isGuest = !widget.localDemo && authService.isGuestSession;
+    final isDemoMode = widget.localDemo || isGuest;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.dashboardTitle),
         actions: [
-          const Padding(padding: EdgeInsets.only(right: 8), child: SyncBadge()),
+          // Sync status is meaningless in local demo mode — it will never
+          // reach a real backend, so showing "pending sync" would just be
+          // confusing noise.
+          if (!widget.localDemo)
+            const Padding(padding: EdgeInsets.only(right: 8), child: SyncBadge()),
           IconButton(
             icon: const Icon(Icons.info_outline),
             onPressed: () => Navigator.of(context)
@@ -42,52 +62,96 @@ class DashboardScreen extends StatelessWidget {
         backgroundColor: AppColors.emergencyRed,
         onPressed: () => showDialog(
           context: context,
-          builder: (_) => EmergencyDialog(hotlineNumber: _emergencyHotline, isDemoMode: isGuest),
+          builder: (_) => EmergencyDialog(hotlineNumber: _emergencyHotline, isDemoMode: isDemoMode),
         ),
         icon: const Icon(Icons.warning_amber_rounded),
         label: Text(l10n.emergencyStopWork),
       ),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
-        stream: client.from('observations').stream(primaryKey: ['id']).order('created_at'),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final observations =
-              snapshot.data!.map((row) => Observation.fromSupabaseRow(row)).toList();
+      body: widget.localDemo
+          ? _buildLocalDemoBody(context, l10n, isDemoMode)
+          : _buildLiveBody(context, l10n, isGuest),
+    );
+  }
 
-          return RefreshIndicator(
-            onRefresh: () async {},
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (isGuest) ...[
-                  _GuestBanner(onSignOut: () async {
-                    await authService.signOut();
-                    if (context.mounted) {
-                      Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                        (route) => false,
-                      );
-                    }
-                  }),
-                  const SizedBox(height: 16),
-                ],
-                _KpiSection(observations: observations),
-                const SizedBox(height: 24),
-                Text(l10n.observationsByCategory, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                _CategoryBarChart(observations: observations),
-                const SizedBox(height: 24),
-                Text(l10n.statusDistribution, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                _StatusLegend(observations: observations),
-                const SizedBox(height: 90),
-              ],
+  /// Static sample data + whatever's already queued locally — no network.
+  Widget _buildLocalDemoBody(BuildContext context, AppLocalizations l10n, bool isDemoMode) {
+    final syncService = ref.read(offlineSyncServiceProvider);
+    final observations = [
+      ...buildLocalDemoObservations(),
+      ...syncService.pendingObservations,
+    ];
+
+    return RefreshIndicator(
+      onRefresh: () async => setState(() {}),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _LocalDemoBanner(
+            onExit: () => Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+              (route) => false,
             ),
-          );
-        },
+          ),
+          const SizedBox(height: 16),
+          _KpiSection(observations: observations),
+          const SizedBox(height: 24),
+          Text(l10n.observationsByCategory, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          _CategoryBarChart(observations: observations),
+          const SizedBox(height: 24),
+          Text(l10n.statusDistribution, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          _StatusLegend(observations: observations, isLocalDemo: true),
+          const SizedBox(height: 90),
+        ],
       ),
+    );
+  }
+
+  /// Realtime Supabase stream — used for real accounts and guest sessions.
+  Widget _buildLiveBody(BuildContext context, AppLocalizations l10n, bool isGuest) {
+    final client = Supabase.instance.client;
+    final authService = AuthService();
+
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: client.from('observations').stream(primaryKey: ['id']).order('created_at'),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final observations = snapshot.data!.map((row) => Observation.fromSupabaseRow(row)).toList();
+
+        return RefreshIndicator(
+          onRefresh: () async {},
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (isGuest) ...[
+                _GuestBanner(onSignOut: () async {
+                  await authService.signOut();
+                  if (context.mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  }
+                }),
+                const SizedBox(height: 16),
+              ],
+              _KpiSection(observations: observations),
+              const SizedBox(height: 24),
+              Text(l10n.observationsByCategory, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              _CategoryBarChart(observations: observations),
+              const SizedBox(height: 24),
+              Text(l10n.statusDistribution, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              _StatusLegend(observations: observations, isLocalDemo: false),
+              const SizedBox(height: 90),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -229,12 +293,13 @@ class _CategoryBarChart extends StatelessWidget {
 
 class _StatusLegend extends StatelessWidget {
   final List<Observation> observations;
-  const _StatusLegend({required this.observations});
+  final bool isLocalDemo;
+  const _StatusLegend({required this.observations, required this.isLocalDemo});
 
   @override
   Widget build(BuildContext context) {
     int countOf(ObservationStatus s) => observations.where((o) => o.status == s).length;
-    final isGuest = AuthService().isGuestSession;
+    final isGuest = !isLocalDemo && AuthService().isGuestSession;
 
     return Wrap(
       spacing: 10,
@@ -252,7 +317,8 @@ class _StatusLegend extends StatelessWidget {
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => NewObservationScreen(
-                projectName: isGuest ? AppConstants.demoProjectName : 'Site A — Main Contract',
+                projectName: (isGuest || isLocalDemo) ? AppConstants.demoProjectName : 'Site A — Main Contract',
+                isLocalDemo: isLocalDemo,
               ),
             ),
           ),
@@ -292,6 +358,44 @@ class _GuestBanner extends StatelessWidget {
             ),
             TextButton(
               onPressed: onSignOut,
+              child: Text(l10n.guestModeAction, style: const TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown at the top of the dashboard in Local Demo Mode — makes it explicit
+/// that this session never talks to the network at all (as opposed to
+/// Guest Mode, which is a real sandboxed Supabase session).
+class _LocalDemoBanner extends StatelessWidget {
+  final VoidCallback onExit;
+  const _LocalDemoBanner({required this.onExit});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: AppColors.slate500, width: 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            const Icon(Icons.phonelink_off_outlined, color: AppColors.slate500, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                l10n.localDemoBanner,
+                style: const TextStyle(fontSize: 12, color: AppColors.slate200),
+              ),
+            ),
+            TextButton(
+              onPressed: onExit,
               child: Text(l10n.guestModeAction, style: const TextStyle(fontSize: 12)),
             ),
           ],
