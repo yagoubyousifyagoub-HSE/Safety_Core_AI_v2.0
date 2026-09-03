@@ -46,8 +46,8 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => OtpVerificationScreen(email: email)),
       );
-    } catch (_) {
-      setState(() => _errorText = l10n.otpSendFailed);
+    } catch (e) {
+      setState(() => _errorText = '${l10n.otpSendFailed}\n$e');
     } finally {
       if (mounted) setState(() => _isSendingCode = false);
     }
@@ -65,8 +65,8 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const DashboardScreen()),
       );
-    } catch (_) {
-      setState(() => _errorText = l10n.guestSignInFailed);
+    } catch (e) {
+      setState(() => _errorText = '${l10n.guestSignInFailed}\n$e');
     } finally {
       if (mounted) setState(() => _isContinuingAsGuest = false);
     }
