@@ -17,6 +17,15 @@
   "localDemoBanner": "وضع تجربة محلي — لا يتصل بالإنترنت إطلاقاً",
   "savedLocalDemo": "تم الحفظ محليًا (الوضع التجريبي المحلي لا يُزامن مع أي خادم).",
 
+  "observationsListTitle": "الملاحظات",
+  "noObservationsYet": "لا توجد ملاحظات بعد.",
+  "roleToggleContractor": "عرض كمقاول",
+  "roleToggleConsultant": "عرض كاستشاري",
+
+  "reportsTitle": "التقارير",
+  "selectObservationForReport": "اختر ملاحظة لإنشاء إشعار السلامة الخاص بها.",
+  "generateReport": "إنشاء تقرير PDF",
+
   "verifyEmailTitle": "تحقق من بريدك الإلكتروني",
   "otpInstructions": "أدخل الرمز المكوّن من 6 أرقام المرسل إلى {email}",
   "verifyCodeButton": "تحقق ومتابعة",
@@ -54,6 +63,9 @@
   "submitObservation": "إرسال الملاحظة",
   "savedOffline": "تم الحفظ في قائمة الانتظار دون اتصال — ستتم المزامنة تلقائيًا.",
   "submittedOnline": "تم إرسال الملاحظة.",
+  "cameraUnavailable": "الكاميرا غير متاحة — تحقق من إذن الكاميرا في إعدادات الجهاز.",
+  "locationUnavailable": "تعذّر تحديد موقعك — تحقق من إذن الموقع ومن تفعيل GPS.",
+  "submitFailed": "حدث خطأ أثناء الإرسال.",
 
   "closureTitle": "إغلاق الملاحظة",
   "afterPhotoLabel": "صورة الإجراء التصحيحي (بعد)",
