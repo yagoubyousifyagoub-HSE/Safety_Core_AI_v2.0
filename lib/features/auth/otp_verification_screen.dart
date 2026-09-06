@@ -62,8 +62,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         MaterialPageRoute(builder: (_) => const DashboardScreen()),
         (route) => false,
       );
-    } catch (_) {
-      setState(() => _errorText = l10n.invalidOtpCode);
+    } catch (e) {
+      setState(() => _errorText = '${l10n.invalidOtpCode}\n$e');
     } finally {
       if (mounted) setState(() => _isVerifying = false);
     }
