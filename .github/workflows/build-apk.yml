@@ -28,6 +28,27 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Ensure Android platform project exists
+        # This repo ships only the Dart `lib/` layer — if android/ was never
+        # generated (flutter create) and committed, create it fresh here so
+        # the build never fails with "build.gradle not found".
+        run: |
+          if [ ! -d "android" ]; then
+            echo "android/ missing — generating it now."
+            flutter create --platforms=android --org com.safetycoreai --project-name safety_core_ai .
+          else
+            echo "android/ already present — skipping."
+          fi
+
+      - name: Ensure required Android permissions are declared
+        # Idempotent: only adds a permission line if it isn't already
+        # present, so this is safe whether android/ was just generated
+        # above or was already committed to the repo.
+        run: |
+          python3 .github/scripts/ensure_android_permissions.py
+          echo "--- Final manifest permissions ---"
+          grep "uses-permission" android/app/src/main/AndroidManifest.xml
+
       - name: Generate localization files
         run: flutter gen-l10n
 
