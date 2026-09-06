@@ -16,7 +16,7 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # Formatting, dates, and Arabic (ar_SA) number/date localization
-  intl: ^0.19.0
+  intl: any
 
   # Backend: Postgres + Auth + Storage + Realtime + Edge Functions
   supabase_flutter: ^2.5.6
