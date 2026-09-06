@@ -52,11 +52,18 @@ class _ObservationClosureScreenState extends ConsumerState<ObservationClosureScr
   }
 
   Future<void> _captureAfterPhoto() async {
-    final shot = await _picker.pickImage(source: ImageSource.camera, imageQuality: 95);
-    if (shot != null) setState(() => _afterPhoto = shot);
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      final shot = await _picker.pickImage(source: ImageSource.camera, imageQuality: 95);
+      if (shot != null && mounted) setState(() => _afterPhoto = shot);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.cameraUnavailable)));
+    }
   }
 
   Future<void> _submitContractorCorrectiveAction() async {
+    final l10n = AppLocalizations.of(context)!;
     if (_afterPhoto == null) return;
     setState(() => _isSubmitting = true);
     try {
@@ -73,6 +80,9 @@ class _ObservationClosureScreenState extends ConsumerState<ObservationClosureScr
       await _persist(observation);
       if (!mounted) return;
       Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${l10n.submitFailed}\n$e')));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -100,6 +110,9 @@ class _ObservationClosureScreenState extends ConsumerState<ObservationClosureScr
       await _persist(observation);
       if (!mounted) return;
       Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${l10n.submitFailed}\n$e')));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
