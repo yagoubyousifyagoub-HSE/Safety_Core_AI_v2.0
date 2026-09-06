@@ -12,9 +12,11 @@ import '../about/screens/about_app_screen.dart';
 import '../auth/auth_service.dart';
 import '../auth/login_screen.dart';
 import '../observations/screens/new_observation_screen.dart';
+import '../observations/screens/observations_list_screen.dart';
 import '../observations/widgets/emergency_dialog.dart';
 import '../observations/widgets/status_chip.dart';
 import '../observations/widgets/sync_badge.dart';
+import '../reports/screens/reports_screen.dart';
 import 'kpi_calculator.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -51,6 +53,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           // confusing noise.
           if (!widget.localDemo)
             const Padding(padding: EdgeInsets.only(right: 8), child: SyncBadge()),
+          IconButton(
+            icon: const Icon(Icons.fact_check_outlined),
+            tooltip: l10n.observationsListTitle,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => ObservationsListScreen(isLocalDemo: widget.localDemo)),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            tooltip: l10n.reportsTitle,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => ReportsScreen(isLocalDemo: widget.localDemo)),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.info_outline),
             onPressed: () => Navigator.of(context)
