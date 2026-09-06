@@ -18,6 +18,15 @@
   "localDemoBanner": "Local Demo Mode — never connects to the internet",
   "savedLocalDemo": "Saved locally (Local Demo Mode never syncs to a server).",
 
+  "observationsListTitle": "Observations",
+  "noObservationsYet": "No observations yet.",
+  "roleToggleContractor": "View as Contractor",
+  "roleToggleConsultant": "View as Consultant",
+
+  "reportsTitle": "Reports",
+  "selectObservationForReport": "Select an observation to generate its HSE notice.",
+  "generateReport": "Generate PDF report",
+
   "verifyEmailTitle": "Verify your email",
   "otpInstructions": "Enter the 6-digit code sent to {email}",
   "@otpInstructions": {"placeholders": {"email": {"type": "String"}}},
@@ -57,6 +66,9 @@
   "submitObservation": "Submit observation",
   "savedOffline": "Saved to offline queue — will sync automatically.",
   "submittedOnline": "Observation submitted.",
+  "cameraUnavailable": "Camera unavailable — check camera permission in device settings.",
+  "locationUnavailable": "Couldn't get your location — check location permission and that GPS is on.",
+  "submitFailed": "Something went wrong while submitting.",
 
   "closureTitle": "Close Out Observation",
   "afterPhotoLabel": "Corrective action photo (After)",
