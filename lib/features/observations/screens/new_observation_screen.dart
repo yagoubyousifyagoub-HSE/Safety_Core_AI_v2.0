@@ -51,44 +51,69 @@ class _NewObservationScreenState extends ConsumerState<NewObservationScreen> {
   final _picker = ImagePicker();
 
   Future<void> _capturePhoto() async {
-    final shot = await _picker.pickImage(source: ImageSource.camera, imageQuality: 95);
-    if (shot != null) setState(() => _capturedPhoto = shot);
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      final shot = await _picker.pickImage(source: ImageSource.camera, imageQuality: 95);
+      if (shot != null && mounted) setState(() => _capturedPhoto = shot);
+    } catch (_) {
+      // Camera permission denied/restricted, or no camera hardware — never
+      // let this bubble up as an unhandled exception; just tell the person.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.cameraUnavailable)));
+    }
   }
 
   Future<void> _tagLocation() async {
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      return;
-    }
-
-    final position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
-
-    bool? insideGeofence;
-    if (!widget.isLocalDemo) {
-      try {
-        final boundary = await _fetchProjectBoundary(widget.projectName);
-        if (boundary != null) {
-          insideGeofence = GeofenceService(boundary).containsPoint(
-            lat: position.latitude,
-            lng: position.longitude,
-          );
-        }
-      } catch (_) {
-        // No boundary registered for this project, or offline lookup failed —
-        // fail open rather than blocking the field team from filing a report.
-        insideGeofence = null;
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.locationUnavailable)));
+        return;
       }
-    }
 
-    setState(() {
-      _position = position;
-      _isInsideGeofence = insideGeofence;
-    });
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.locationUnavailable)));
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      bool? insideGeofence;
+      if (!widget.isLocalDemo) {
+        try {
+          final boundary = await _fetchProjectBoundary(widget.projectName);
+          if (boundary != null) {
+            insideGeofence = GeofenceService(boundary).containsPoint(
+              lat: position.latitude,
+              lng: position.longitude,
+            );
+          }
+        } catch (_) {
+          // No boundary registered for this project, or offline lookup failed —
+          // fail open rather than blocking the field team from filing a report.
+          insideGeofence = null;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _position = position;
+        _isInsideGeofence = insideGeofence;
+      });
+    } catch (_) {
+      // Any other Geolocator failure (timeout, platform exception, etc.) —
+      // surface it as feedback instead of leaving the button silently inert.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.locationUnavailable)));
+    }
   }
 
   Future<Map<String, dynamic>?> _fetchProjectBoundary(String projectName) async {
@@ -168,6 +193,11 @@ class _NewObservationScreenState extends ConsumerState<NewObservationScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${l10n.submitFailed}\n$e')),
+      );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
