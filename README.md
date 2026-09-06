@@ -23,7 +23,42 @@ If your IDE flags that import as missing before the first build, run:
 flutter gen-l10n
 ```
 
-## 2. Supabase
+## 2. Required native permissions (do this immediately after `flutter create`)
+
+`flutter create` does **not** add camera/location permission declarations —
+you must add them yourself, in both platform projects, before the camera
+and GPS features will work correctly.
+
+**Android** — add inside `android/app/src/main/AndroidManifest.xml`, as a
+direct child of `<manifest>` (before the `<application>` tag):
+```xml
+<uses-permission android:name="android.permission.CAMERA"/>
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+<uses-permission android:name="android.permission.INTERNET"/>
+```
+Without these, camera/location calls fail gracefully in this codebase (every
+call is wrapped in try/catch with a snackbar message) — annoying, but not a
+crash.
+
+**iOS** — add inside `ios/Runner/Info.plist`, as direct children of the
+outermost `<dict>`:
+```xml
+<key>NSCameraUsageDescription</key>
+<string>Safety Core AI needs camera access to photograph HSE findings.</string>
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>Safety Core AI needs your location to geotag HSE observations.</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Safety Core AI needs photo library access to attach evidence photos.</string>
+```
+**This one is not optional.** On iOS, calling the camera or location APIs
+without a matching `Info.plist` usage-description string terminates the
+app immediately at the OS level — before Dart/Flutter's error handling
+ever gets a chance to run, so no amount of try/catch in this codebase can
+prevent it. If you only build for Android right now, you can skip this,
+but add it before ever building for iOS.
+
+## 3. Supabase
 
 1. Create a project at supabase.com.
 2. Run `supabase/schema.sql` in the SQL editor — creates `profiles`,
@@ -47,7 +82,7 @@ flutter gen-l10n
    ```
 
    Never commit real keys to source control — always pass them via
-   `--dart-define` (locally) or repo secrets (in CI, see §3 below).
+   `--dart-define` (locally) or repo secrets (in CI, see §4 below).
 
 ### How auth + RLS fit together
 
@@ -80,7 +115,7 @@ flutter gen-l10n
   turning on in **Authentication** settings for a public-facing demo, since
   otherwise abandoned guest sessions accumulate indefinitely.
 
-## 3. Building an APK via GitHub Actions
+## 4. Building an APK via GitHub Actions
 
 The repo ships `.github/workflows/build-apk.yml`, which builds a release
 APK automatically and makes it downloadable — no local Android SDK setup
@@ -118,37 +153,54 @@ requires generating a real upload keystore and wiring it into
 `android/app/build.gradle`, which isn't set up here since it's specific to
 your own signing identity.
 
-## 4. Architecture
+## 5. Architecture
 
 ```
 lib/
   core/
-    constants/app_colors.dart     Dark slate palette (#0F172A base)
-    theme/app_theme.dart          Material 3 ThemeData
-    models/                       Observation, UserRole
+    constants/
+      app_colors.dart              Dark slate palette (#0F172A base)
+      app_constants.dart           Demo project name, local-demo user id
+    theme/app_theme.dart           Material 3 ThemeData
+    models/                        Observation, UserRole (incl. 'guest')
     services/
-      geofence_service.dart       Ray-casting point-in-polygon (GeoJSON)
-      watermark_service.dart      GPS/date/project stamp burned into pixels
-      image_compressor.dart       80%+ size reduction for field photos
-      pdf_report_service.dart     1-page HSE non-conformance notice
-      offline_sync_service.dart   Local queue -> Supabase sync
-      connectivity_service.dart   Online/offline stream
-    providers.dart                Riverpod wiring for the sync singleton
+      geofence_service.dart        Ray-casting point-in-polygon (GeoJSON)
+      watermark_service.dart       GPS/date/project stamp burned into pixels
+      image_compressor.dart        80%+ size reduction for field photos
+      pdf_report_service.dart      1-page HSE non-conformance notice
+      offline_sync_service.dart    Local queue -> Supabase sync
+      connectivity_service.dart    Online/offline stream
+      local_demo_data.dart         Static sample observations, zero network
+    providers.dart                 Riverpod wiring for the sync singleton
   features/
-    auth/                         Supabase auth + role resolution
-    dashboard/                    LTIFR/TRIR KPIs, category/status charts
+    auth/
+      auth_service.dart             Email OTP + anonymous guest + role resolution
+      login_screen.dart             Email entry / Guest / Local Demo entry points
+      otp_verification_screen.dart  6-digit code entry
+      widgets/otp_input_field.dart  Self-contained OTP box widget
+    dashboard/
+      dashboard_screen.dart         LTIFR/TRIR KPIs, charts, guest/local-demo banners
+      kpi_calculator.dart           ANSI/OSHA + ISO rate formulas
     observations/
       screens/new_observation_screen.dart
       screens/observation_closure_screen.dart
+      screens/observations_list_screen.dart  Tappable list -> closure/sign-off
       widgets/sync_badge.dart
       widgets/emergency_dialog.dart
       widgets/status_chip.dart
+    reports/screens/reports_screen.dart       Pick an observation -> generate PDF
     about/screens/about_app_screen.dart
   main.dart
-supabase/schema.sql               Tables + Row Level Security policies
+supabase/schema.sql                Tables + Row Level Security policies
+.github/workflows/build-apk.yml    CI: builds & uploads a release APK
 ```
 
-## 5. Notes on key design decisions
+**Navigation map** (all four reachable from the dashboard's app bar):
+Dashboard → Observations list → Observation closure/sign-off
+Dashboard → Reports → generate PDF
+Dashboard → About
+
+## 6. Notes on key design decisions
 
 - **Offline queue** stores `Observation` as a flat `Map<String, dynamic>` in
   a Hive box rather than a generated `TypeAdapter`, so the project compiles
@@ -162,3 +214,17 @@ supabase/schema.sql               Tables + Row Level Security policies
   (e.g. `canSignOff`) are for UI gating only.
 - **Emergency hotline number** in `dashboard_screen.dart` is a placeholder —
   replace `_emergencyHotline` with the live site HSE contact before deploy.
+- **Crash hardening:** every camera/GPS call (image_picker, geolocator) is
+  wrapped in try/catch with user-facing feedback instead of letting a
+  denied permission or unavailable hardware throw uncaught. The one
+  exception the codebase cannot protect against is the iOS Info.plist
+  requirement in §2 — that's an OS-level enforcement that happens before
+  Dart ever runs.
+- **Local Demo Mode** (`DashboardScreen(localDemo: true)`) never calls
+  Supabase — the dashboard, observations list, and reports screens all
+  read from `local_demo_data.dart` plus whatever's queued in Hive.
+  Real-account role resolution (`AuthService.fetchCurrentProfile()`) exists
+  but isn't yet wired into the observations list for live sessions — it
+  currently defaults `currentUserRole` to `contractor` there; call it and
+  thread the result through if you need the consultant sign-off view for
+  real accounts too.
