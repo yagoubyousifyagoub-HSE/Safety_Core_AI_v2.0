@@ -1,5 +1,7 @@
 name: Build Android APK
 
+# Builds a release APK on every push to main, or manually via the
+# "Run workflow" button in the GitHub Actions tab.
 on:
   push:
     branches: [main]
@@ -23,34 +25,20 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Ensure Android platform exists
-        run: |
-          if [ ! -d "android" ]; then
-            flutter create safety_core_ai --platforms=android --org com.safetycore.ai
-            cp -r safety_core_ai/android ./
-            rm -rf safety_core_ai
-          fi
-          sed -i 's/android:label="[^"]*"/android:label="Safety Core AI"/g' android/app/src/main/AndroidManifest.xml || true
-
-      - name: Fix Localization & Dependencies
-        run: |
-          # استبدال مفاتيح الترجمة الناقصة بنصوص مباشرة لتفادي خطأ المترجم
-          sed -i "s/l10n\.localDemoButton/'دخول تجريبي سريع'/g" lib/features/auth/login_screen.dart || true
-          sed -i "s/l10n\.localDemoBanner/'وضع التجربة المحلي المباشر'/g" lib/features/dashboard/dashboard_screen.dart || true
-          sed -i "s/l10n\.savedLocalDemo/'تم حفظ الملاحظة محلياً بنجاح'/g" lib/features/observations/screens/new_observation_screen.dart || true
-          
-          # ضبط توافق مكتبة intl
-          sed -i 's/intl:.*/intl: any/g' pubspec.yaml || true
-          flutter pub get
+      - name: Install dependencies
+        run: flutter pub get
 
       - name: Generate localization files
-        run: flutter gen-l10n || true
+        run: flutter gen-l10n
 
       - name: Build release APK
+        # SUPABASE_URL / SUPABASE_ANON_KEY come from this repo's
+        # Settings -> Secrets and variables -> Actions -> New repository secret.
+        # Never commit real keys directly into this file.
         run: |
-          flutter build apk --release --no-tree-shake-icons \
-            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
-            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
       - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
