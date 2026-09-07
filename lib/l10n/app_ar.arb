@@ -69,6 +69,17 @@
   "dashboardLoadFailed": "تعذّر تحميل الملاحظات.",
   "retry": "إعادة المحاولة",
 
+  "dashboardTab": "الرئيسية",
+  "observationsTab": "الملاحظات",
+  "reportsTab": "التقارير",
+  "aboutTab": "حول",
+
+  "emergencyNumberLabel": "رقم هاتف الطوارئ",
+  "emergencyNumberInvalid": "أدخل رقم هاتف صحيح.",
+  "emergencyNumberSaved": "تم تحديث رقم الطوارئ.",
+  "save": "حفظ",
+  "cancel": "إلغاء",
+
   "closureTitle": "إغلاق الملاحظة",
   "afterPhotoLabel": "صورة الإجراء التصحيحي (بعد)",
   "consultantSignOff": "اعتماد الاستشاري بالتوقيع",
