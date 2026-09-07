@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +18,7 @@ import '../observations/widgets/emergency_dialog.dart';
 import '../observations/widgets/status_chip.dart';
 import '../observations/widgets/sync_badge.dart';
 import '../reports/screens/reports_screen.dart';
+import '../../core/widgets/stream_error_state.dart';
 import 'kpi_calculator.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -36,6 +38,10 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   static const String _emergencyHotline = '+966500000000'; // replace with site HSE hotline
+
+  // Bumping this forces StreamBuilder to tear down and resubscribe to a
+  // brand-new stream instance — the retry mechanism for _buildLiveBody.
+  int _liveRetryCount = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -130,15 +136,36 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final authService = AuthService();
 
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: client.from('observations').stream(primaryKey: ['id']).order('created_at'),
+      key: ValueKey(_liveRetryCount),
+      stream: client
+          .from('observations')
+          .stream(primaryKey: ['id'])
+          .order('created_at')
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: (sink) => sink.addError(
+              TimeoutException(
+                'No response after 12s. Likely cause: Realtime replication is '
+                'not enabled for the "observations" table (Database -> '
+                'Replication in the Supabase dashboard), or RLS is blocking '
+                'this account from reading any rows.',
+              ),
+            ),
+          ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return StreamErrorState(
+            error: snapshot.error.toString(),
+            onRetry: () => setState(() => _liveRetryCount++),
+          );
+        }
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         final observations = snapshot.data!.map((row) => Observation.fromSupabaseRow(row)).toList();
 
         return RefreshIndicator(
-          onRefresh: () async {},
+          onRefresh: () async => setState(() => _liveRetryCount++),
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -420,3 +447,4 @@ class _LocalDemoBanner extends StatelessWidget {
     );
   }
 }
+
