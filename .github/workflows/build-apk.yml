@@ -28,7 +28,6 @@ jobs:
           if ls *.zip 1> /dev/null 2>&1; then
             mkdir -p extracted_temp
             unzip -o \*.zip -d extracted_temp/
-            # العثور على مسار pubspec.yaml ونقل ملفات المشروع للمسار الرئيسي
             ROOT_PATH=$(find extracted_temp -type f -name "pubspec.yaml" -exec dirname {} \; | head -n 1)
             if [ -n "$ROOT_PATH" ]; then
               cp -rf "$ROOT_PATH"/* ./
@@ -36,21 +35,23 @@ jobs:
             rm -rf extracted_temp
           fi
 
-      - name: 5. Ensure Android Shell & Fix Name
+      - name: 5. Ensure Android Platform & Grant Permissions
         run: |
           if [ ! -d "android" ]; then
             flutter create safety_core_ai --platforms=android --org com.safetycore.ai
             cp -r safety_core_ai/android ./
             rm -rf safety_core_ai
           fi
+          
+          # تثبيت اسم التطبيق
           sed -i 's/android:label="[^"]*"/android:label="Safety Core AI"/g' android/app/src/main/AndroidManifest.xml || true
 
-      - name: 6. Resolve Dependencies & Constants
+          # منح إذن الإنترنت والشبكة لمنع تعذر الاتصال بالخوادم
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' android/app/src/main/AndroidManifest.xml
+
+      - name: 6. Resolve Dependencies & Fix Keys
         run: |
-          # تصحيح طول كود OTP إن وجد
           find lib/ -name "otp_verification_screen.dart" -exec sed -i "s/AppConstants\.otpCodeLength/6/g" {} + 2>/dev/null || true
-          
-          # توافق مكتبة intl
           sed -i 's/intl:.*/intl: any/g' pubspec.yaml || true
           flutter pub get
 
@@ -69,6 +70,6 @@ jobs:
       - name: 9. Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: safety-core-ai-final-release
+          name: safety-core-ai-online-release
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
