@@ -69,6 +69,8 @@
   "cameraUnavailable": "Camera unavailable — check camera permission in device settings.",
   "locationUnavailable": "Couldn't get your location — check location permission and that GPS is on.",
   "submitFailed": "Something went wrong while submitting.",
+  "dashboardLoadFailed": "Couldn't load observations.",
+  "retry": "Retry",
 
   "closureTitle": "Close Out Observation",
   "afterPhotoLabel": "Corrective action photo (After)",
