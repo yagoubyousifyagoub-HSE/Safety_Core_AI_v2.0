@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,6 +7,7 @@ import '../../../core/models/observation_model.dart';
 import '../../../core/models/user_role.dart';
 import '../../../core/providers.dart';
 import '../../../core/services/local_demo_data.dart';
+import '../../../core/widgets/stream_error_state.dart';
 import '../../../l10n/gen/app_localizations.dart';
 import 'observation_closure_screen.dart';
 
@@ -27,6 +29,7 @@ class _ObservationsListScreenState extends ConsumerState<ObservationsListScreen>
   // same device. For a real signed-in account, role should come from
   // AuthService.fetchCurrentProfile() instead — see the note in About.
   UserRole _demoRole = UserRole.contractor;
+  int _liveRetryCount = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -80,8 +83,24 @@ class _ObservationsListScreenState extends ConsumerState<ObservationsListScreen>
   Widget _buildLiveList(BuildContext context, AppLocalizations l10n) {
     final client = Supabase.instance.client;
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: client.from('observations').stream(primaryKey: ['id']).order('created_at'),
+      key: ValueKey(_liveRetryCount),
+      stream: client
+          .from('observations')
+          .stream(primaryKey: ['id'])
+          .order('created_at')
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: (sink) => sink.addError(
+              TimeoutException('No response after 12s — check Realtime replication and RLS policies.'),
+            ),
+          ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return StreamErrorState(
+            error: snapshot.error.toString(),
+            onRetry: () => setState(() => _liveRetryCount++),
+          );
+        }
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
