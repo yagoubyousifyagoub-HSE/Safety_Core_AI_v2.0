@@ -35,7 +35,7 @@ jobs:
         run: |
           if [ ! -d "android" ]; then
             echo "android/ missing — generating it now."
-            flutter create --platforms=android --org com.safetycoreai --project-name Safety Core Ai .
+            flutter create --platforms=android --org com.safetycoreai --project-name safety_core_ai .
           else
             echo "android/ already present — skipping."
           fi
@@ -65,5 +65,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: safety-core-ai-release-apk
-          path: build/app/outputs/flutter-apk/SafetyCoreAi-release.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
