@@ -8,17 +8,13 @@ import '../../core/constants/app_constants.dart';
 import '../../core/models/observation_model.dart';
 import '../../core/providers.dart';
 import '../../core/services/local_demo_data.dart';
+import '../../core/widgets/stream_error_state.dart';
 import '../../l10n/gen/app_localizations.dart';
-import '../about/screens/about_app_screen.dart';
 import '../auth/auth_service.dart';
 import '../auth/login_screen.dart';
 import '../observations/screens/new_observation_screen.dart';
-import '../observations/screens/observations_list_screen.dart';
-import '../observations/widgets/emergency_dialog.dart';
 import '../observations/widgets/status_chip.dart';
 import '../observations/widgets/sync_badge.dart';
-import '../reports/screens/reports_screen.dart';
-import '../../core/widgets/stream_error_state.dart';
 import 'kpi_calculator.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -37,8 +33,6 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  static const String _emergencyHotline = '+966500000000'; // replace with site HSE hotline
-
   // Bumping this forces StreamBuilder to tear down and resubscribe to a
   // brand-new stream instance — the retry mechanism for _buildLiveBody.
   int _liveRetryCount = 0;
@@ -58,36 +52,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           // reach a real backend, so showing "pending sync" would just be
           // confusing noise.
           if (!widget.localDemo)
-            const Padding(padding: EdgeInsets.only(right: 8), child: SyncBadge()),
-          IconButton(
-            icon: const Icon(Icons.fact_check_outlined),
-            tooltip: l10n.observationsListTitle,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => ObservationsListScreen(isLocalDemo: widget.localDemo)),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            tooltip: l10n.reportsTitle,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => ReportsScreen(isLocalDemo: widget.localDemo)),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            onPressed: () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const AboutAppScreen())),
-          ),
+            const Padding(padding: EdgeInsets.only(right: 16), child: SyncBadge()),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppColors.emergencyRed,
-        onPressed: () => showDialog(
-          context: context,
-          builder: (_) => EmergencyDialog(hotlineNumber: _emergencyHotline, isDemoMode: isDemoMode),
-        ),
-        icon: const Icon(Icons.warning_amber_rounded),
-        label: Text(l10n.emergencyStopWork),
       ),
       body: widget.localDemo
           ? _buildLocalDemoBody(context, l10n, isDemoMode)
