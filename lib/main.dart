@@ -6,10 +6,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/providers.dart';
 import 'core/services/offline_sync_service.dart';
+import 'core/services/settings_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/auth_service.dart';
 import 'features/auth/login_screen.dart';
-import 'features/dashboard/dashboard_screen.dart';
+import 'features/shell/app_shell_screen.dart';
 import 'l10n/gen/app_localizations.dart';
 
 // Replace with your project's values (or wire via --dart-define at build
@@ -36,10 +37,14 @@ Future<void> main() async {
   final syncService = OfflineSyncService();
   await syncService.init();
 
+  final settingsService = SettingsService();
+  await settingsService.init();
+
   runApp(
     ProviderScope(
       overrides: [
         offlineSyncServiceProvider.overrideWithValue(syncService),
+        settingsServiceProvider.overrideWithValue(settingsService),
       ],
       child: const SafetyCoreApp(),
     ),
@@ -91,7 +96,7 @@ class _AuthGate extends StatelessWidget {
       stream: authService.onAuthStateChange,
       builder: (context, snapshot) {
         final isSignedIn = authService.isSignedIn;
-        return isSignedIn ? const DashboardScreen() : const LoginScreen();
+        return isSignedIn ? const AppShellScreen() : const LoginScreen();
       },
     );
   }
