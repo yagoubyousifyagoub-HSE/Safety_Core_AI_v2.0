@@ -72,6 +72,17 @@
   "dashboardLoadFailed": "Couldn't load observations.",
   "retry": "Retry",
 
+  "dashboardTab": "Dashboard",
+  "observationsTab": "Observations",
+  "reportsTab": "Reports",
+  "aboutTab": "About",
+
+  "emergencyNumberLabel": "Emergency hotline number",
+  "emergencyNumberInvalid": "Enter a valid phone number.",
+  "emergencyNumberSaved": "Emergency number updated.",
+  "save": "Save",
+  "cancel": "Cancel",
+
   "closureTitle": "Close Out Observation",
   "afterPhotoLabel": "Corrective action photo (After)",
   "consultantSignOff": "Consultant sign-off",
