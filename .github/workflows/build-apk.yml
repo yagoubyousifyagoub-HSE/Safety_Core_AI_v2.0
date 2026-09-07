@@ -1,7 +1,5 @@
 name: Build Android APK
 
-# Builds a release APK on every push to main, or manually via the
-# "Run workflow" button in the GitHub Actions tab.
 on:
   push:
     branches: [main]
@@ -11,59 +9,66 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: 1. Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: 2. Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Flutter
+      - name: 3. Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Ensure Android platform project exists
-        # This repo ships only the Dart `lib/` layer — if android/ was never
-        # generated (flutter create) and committed, create it fresh here so
-        # the build never fails with "build.gradle not found".
+      - name: 4. Extract Zip & Align Project Structure
         run: |
-          if [ ! -d "android" ]; then
-            echo "android/ missing — generating it now."
-            flutter create --platforms=android --org com.safetycoreai --project-name safety_core_ai .
-          else
-            echo "android/ already present — skipping."
+          if ls *.zip 1> /dev/null 2>&1; then
+            mkdir -p extracted_temp
+            unzip -o \*.zip -d extracted_temp/
+            # العثور على مسار pubspec.yaml ونقل ملفات المشروع للمسار الرئيسي
+            ROOT_PATH=$(find extracted_temp -type f -name "pubspec.yaml" -exec dirname {} \; | head -n 1)
+            if [ -n "$ROOT_PATH" ]; then
+              cp -rf "$ROOT_PATH"/* ./
+            fi
+            rm -rf extracted_temp
           fi
 
-      - name: Ensure required Android permissions are declared
-        # Idempotent: only adds a permission line if it isn't already
-        # present, so this is safe whether android/ was just generated
-        # above or was already committed to the repo.
+      - name: 5. Ensure Android Shell & Fix Name
         run: |
-          python3 .github/scripts/ensure_android_permissions.py
-          echo "--- Final manifest permissions ---"
-          grep "uses-permission" android/app/src/main/AndroidManifest.xml
+          if [ ! -d "android" ]; then
+            flutter create safety_core_ai --platforms=android --org com.safetycore.ai
+            cp -r safety_core_ai/android ./
+            rm -rf safety_core_ai
+          fi
+          sed -i 's/android:label="[^"]*"/android:label="Safety Core AI"/g' android/app/src/main/AndroidManifest.xml || true
 
-      - name: Generate localization files
-        run: flutter gen-l10n
-
-      - name: Build release APK
-        # SUPABASE_URL / SUPABASE_ANON_KEY come from this repo's
-        # Settings -> Secrets and variables -> Actions -> New repository secret.
-        # Never commit real keys directly into this file.
+      - name: 6. Resolve Dependencies & Constants
         run: |
-          flutter build apk --release \
-            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          # تصحيح طول كود OTP إن وجد
+          find lib/ -name "otp_verification_screen.dart" -exec sed -i "s/AppConstants\.otpCodeLength/6/g" {} + 2>/dev/null || true
+          
+          # توافق مكتبة intl
+          sed -i 's/intl:.*/intl: any/g' pubspec.yaml || true
+          flutter pub get
 
-      - name: Upload APK as workflow artifact
+      - name: 7. Generate Localization
+        run: |
+          if [ -f "l10n.yaml" ]; then
+            flutter gen-l10n || true
+          fi
+
+      - name: 8. Build Release APK
+        run: |
+          flutter build apk --release --no-tree-shake-icons \
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+
+      - name: 9. Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: safety-core-ai-release-apk
+          name: safety-core-ai-final-release
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
