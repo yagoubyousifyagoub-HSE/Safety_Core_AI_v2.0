@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../l10n/gen/app_localizations.dart';
-import '../dashboard/dashboard_screen.dart';
+import '../shell/app_shell_screen.dart';
 import 'auth_service.dart';
 import 'otp_verification_screen.dart';
 
@@ -64,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await _authService.signInAsGuest();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        MaterialPageRoute(builder: (_) => const AppShellScreen()),
       );
     } catch (e) {
       setState(() => _errorText = '${l10n.guestSignInFailed}\n$e');
@@ -79,7 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void _enterLocalDemo() {
     setState(() => _isEnteringLocalDemo = true);
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const DashboardScreen(localDemo: true)),
+      MaterialPageRoute(builder: (_) => const AppShellScreen(localDemo: true)),
     );
   }
 
