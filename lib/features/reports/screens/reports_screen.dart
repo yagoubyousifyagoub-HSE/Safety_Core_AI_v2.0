@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import '../../../core/models/observation_model.dart';
 import '../../../core/providers.dart';
 import '../../../core/services/local_demo_data.dart';
 import '../../../core/services/pdf_report_service.dart';
+import '../../../core/widgets/stream_error_state.dart';
 import '../../../l10n/gen/app_localizations.dart';
 import '../../observations/widgets/status_chip.dart';
 
@@ -25,6 +27,7 @@ class ReportsScreen extends ConsumerStatefulWidget {
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   Observation? _selected;
   bool _isGenerating = false;
+  int _liveRetryCount = 0;
 
   List<Observation> _loadObservations() {
     if (widget.isLocalDemo) {
@@ -82,8 +85,24 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   Widget _buildLiveList(BuildContext context, AppLocalizations l10n) {
     final client = Supabase.instance.client;
     return FutureBuilder<List<Map<String, dynamic>>>(
-      future: client.from('observations').select().order('created_at', ascending: false),
+      key: ValueKey(_liveRetryCount),
+      future: client
+          .from('observations')
+          .select()
+          .order('created_at', ascending: false)
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () => throw TimeoutException(
+              'No response after 12s — check Realtime replication and RLS policies.',
+            ),
+          ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return StreamErrorState(
+            error: snapshot.error.toString(),
+            onRetry: () => setState(() => _liveRetryCount++),
+          );
+        }
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
