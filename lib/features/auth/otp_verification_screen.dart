@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_constants.dart';
 import '../../l10n/gen/app_localizations.dart';
-import '../dashboard/dashboard_screen.dart';
+import '../shell/app_shell_screen.dart';
 import 'auth_service.dart';
 import 'widgets/otp_input_field.dart';
 
@@ -49,7 +50,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   Future<void> _verify() async {
     final l10n = AppLocalizations.of(context)!;
-    if (_code.length != 6) return;
+    if (_code.length != AppConstants.otpCodeLength) return;
 
     setState(() {
       _isVerifying = true;
@@ -59,7 +60,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       await _authService.verifyEmailOtp(email: widget.email, code: _code);
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        MaterialPageRoute(builder: (_) => const AppShellScreen()),
         (route) => false,
       );
     } catch (e) {
@@ -108,6 +109,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 ),
                 const SizedBox(height: 26),
                 OtpInputField(
+                  length: AppConstants.otpCodeLength,
                   onChanged: (value) => _code = value,
                   onCompleted: (value) {
                     _code = value;
@@ -120,7 +122,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 ],
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: _isVerifying ? null : _verify,
+                  onPressed: (_isVerifying || _code.length != AppConstants.otpCodeLength) ? null : _verify,
                   child: _isVerifying
                       ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2.4))
                       : Text(l10n.verifyCodeButton),
