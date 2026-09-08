@@ -28,14 +28,10 @@ jobs:
           if ls *.zip 1> /dev/null 2>&1; then
             mkdir -p extracted_temp
             unzip -o \*.zip -d extracted_temp/
-            
-            # البحث عن مسار pubspec.yaml ونقل ملفات المشروع للمسار الرئيسي
             ROOT_PATH=$(find extracted_temp -type f -name "pubspec.yaml" -exec dirname {} \; | head -n 1)
             if [ -n "$ROOT_PATH" ]; then
               cp -rf "$ROOT_PATH"/* ./
             fi
-            
-            # منح صلاحيات التعديل الكاملة والحذف الجذري لتفادي Permission denied
             chmod -R 777 extracted_temp || true
             sudo rm -rf extracted_temp
           fi
@@ -47,15 +43,163 @@ jobs:
             cp -r safety_core_ai/android ./
             rm -rf safety_core_ai
           fi
-          
-          # تثبيت اسم التطبيق
           sed -i 's/android:label="[^"]*"/android:label="Safety Core AI"/g' android/app/src/main/AndroidManifest.xml || true
-
-          # منح إذن الإنترنت والشبكة لمنع انقطاع الاتصال بخوادم Supabase
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' android/app/src/main/AndroidManifest.xml
 
-      - name: 6. Resolve Dependencies & Fix Keys
+      - name: 6. Fix OTP Input Field & Clipboard Paste
         run: |
+          mkdir -p lib/features/auth/widgets
+          cat << 'EOF' > lib/features/auth/widgets/otp_input_field.dart
+          import 'package:flutter/material.dart';
+          import 'package:flutter/services.dart';
+
+          class OtpInputField extends StatefulWidget {
+            final int length;
+            final ValueChanged<String>? onChanged;
+            final ValueChanged<String>? onCompleted;
+
+            const OtpInputField({
+              super.key,
+              this.length = 6,
+              this.onChanged,
+              this.onCompleted,
+            });
+
+            @override
+            State<OtpInputField> createState() => _OtpInputFieldState();
+          }
+
+          class _OtpInputFieldState extends State<OtpInputField> with WidgetsBindingObserver {
+            late final TextEditingController _controller;
+            late final FocusNode _focusNode;
+
+            @override
+            void initState() {
+              super.initState();
+              WidgetsBinding.instance.addObserver(this);
+              _controller = TextEditingController();
+              _focusNode = FocusNode();
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _focusNode.requestFocus();
+              });
+            }
+
+            @override
+            void didChangeAppLifecycleState(AppLifecycleState state) {
+              if (state == AppLifecycleState.resumed) {
+                Future.delayed(const Duration(milliseconds: 250), () {
+                  if (mounted) {
+                    _focusNode.requestFocus();
+                  }
+                });
+              }
+            }
+
+            @override
+            void dispose() {
+              WidgetsBinding.instance.removeObserver(this);
+              _controller.dispose();
+              _focusNode.dispose();
+              super.dispose();
+            }
+
+            Future<void> _pasteFromClipboard() async {
+              final data = await Clipboard.getData(Clipboard.kTextPlain);
+              final text = data?.text?.trim() ?? '';
+              final digits = text.replaceAll(RegExp(r'\D'), '');
+              if (digits.isNotEmpty) {
+                final code = digits.length > widget.length ? digits.substring(0, widget.length) : digits;
+                _controller.text = code;
+                _controller.selection = TextSelection.collapsed(offset: code.length);
+                widget.onChanged?.call(code);
+                if (code.length == widget.length) {
+                  widget.onCompleted?.call(code);
+                }
+                setState(() {});
+              }
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              final currentText = _controller.text;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _focusNode.requestFocus(),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Opacity(
+                          opacity: 0.0,
+                          child: TextField(
+                            controller: _controller,
+                            focusNode: _focusNode,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(widget.length),
+                            ],
+                            enableInteractiveSelection: true,
+                            autofocus: true,
+                            onChanged: (val) {
+                              setState(() {});
+                              widget.onChanged?.call(val);
+                              if (val.length == widget.length) {
+                                widget.onCompleted?.call(val);
+                              }
+                            },
+                          ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: List.generate(widget.length, (index) {
+                            final char = index < currentText.length ? currentText[index] : '';
+                            final isCurrent = _focusNode.hasFocus && index == currentText.length;
+                            return Container(
+                              width: 44,
+                              height: 52,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: isCurrent
+                                      ? Theme.of(context).colorScheme.primary
+                                      : (char.isNotEmpty ? Colors.blueAccent : Colors.white24),
+                                  width: isCurrent ? 2.0 : 1.2,
+                                ),
+                              ),
+                              child: Text(
+                                char,
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  OutlinedButton.icon(
+                    onPressed: _pasteFromClipboard,
+                    icon: const Icon(Icons.paste_rounded, size: 18),
+                    label: const Text('لصق الرمز من الحافظة'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                  ),
+                ],
+              );
+            }
+          }
+          EOF
+
           find lib/ -name "otp_verification_screen.dart" -exec sed -i "s/AppConstants\.otpCodeLength/6/g" {} + 2>/dev/null || true
           sed -i 's/intl:.*/intl: any/g' pubspec.yaml || true
           flutter pub get
@@ -75,6 +219,6 @@ jobs:
       - name: 9. Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: safety-core-ai-release
+          name: safety-core-ai-fixed-otp
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
