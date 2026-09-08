@@ -88,9 +88,7 @@ jobs:
             void didChangeAppLifecycleState(AppLifecycleState state) {
               if (state == AppLifecycleState.resumed) {
                 Future.delayed(const Duration(milliseconds: 250), () {
-                  if (mounted) {
-                    _focusNode.requestFocus();
-                  }
+                  if (mounted) _focusNode.requestFocus();
                 });
               }
             }
@@ -146,9 +144,7 @@ jobs:
                             onChanged: (val) {
                               setState(() {});
                               widget.onChanged?.call(val);
-                              if (val.length == widget.length) {
-                                widget.onCompleted?.call(val);
-                              }
+                              if (val.length == widget.length) widget.onCompleted?.call(val);
                             },
                           ),
                         ),
@@ -173,11 +169,7 @@ jobs:
                               ),
                               child: Text(
                                 char,
-                                style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
+                                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
                               ),
                             );
                           }),
@@ -200,7 +192,7 @@ jobs:
           }
           EOF
 
-      - name: 7. Apply Inverted Navigation Fix & Language/Logout Features
+      - name: 7. Inject Global Language Controller & Settings Screen
         run: |
           mkdir -p lib/core/services
           cat << 'EOF' > lib/core/services/language_controller.dart
@@ -336,18 +328,6 @@ jobs:
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 13, color: isDark ? Colors.white70 : Colors.black54),
                           ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.blueAccent.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              isAr ? 'الإصدار 2.0.0 (HSE Edition)' : 'Version 2.0.0 (HSE Edition)',
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.blueAccent),
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -432,10 +412,6 @@ jobs:
                               child: Icon(Icons.person, color: Colors.white),
                             ),
                             title: Text(userEmail, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                            subtitle: Text(
-                              isAr ? 'مهندس سلامة وصحة مهنية معتمد' : 'Authorized HSE Engineer',
-                              style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54),
-                            ),
                           ),
                           const Divider(height: 24),
                           SizedBox(
@@ -464,32 +440,149 @@ jobs:
           }
           EOF
 
+      - name: 8. Fix Global MaterialApp Binding & Bottom Navigation
+        run: |
+          # 1. تحديث شريط التنقل السفلي ليتفاعل تلقائياً مع اللغة والاتجاه دون قفز المؤشر
+          mkdir -p lib/core/widgets
+          cat << 'EOF' > lib/core/widgets/elegant_bottom_nav.dart
+          import 'package:flutter/material.dart';
+          import '../services/language_controller.dart';
+
+          class ElegantBottomNav extends StatelessWidget {
+            final int currentIndex;
+            final Function(int) onTap;
+
+            const ElegantBottomNav({
+              super.key,
+              required this.currentIndex,
+              required this.onTap,
+            });
+
+            @override
+            Widget build(BuildContext context) {
+              return ValueListenableBuilder<Locale>(
+                valueListenable: LanguageController.currentLocale,
+                builder: (context, locale, _) {
+                  final isAr = locale.languageCode == 'ar';
+                  final isDark = Theme.of(context).brightness == Brightness.dark;
+
+                  final items = [
+                    {'icon': Icons.grid_view_rounded, 'title': isAr ? 'الرئيسية' : 'Home'},
+                    {'icon': Icons.fact_check_outlined, 'title': isAr ? 'الملاحظات' : 'Observations'},
+                    {'icon': Icons.picture_as_pdf_outlined, 'title': isAr ? 'التقارير' : 'Reports'},
+                    {'icon': Icons.smart_toy_outlined, 'title': isAr ? 'المستشار' : 'Advisor'},
+                    {'icon': Icons.info_outline_rounded, 'title': isAr ? 'حول' : 'About'},
+                  ];
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF111827) : Colors.white,
+                      border: Border(top: BorderSide(color: isDark ? Colors.white12 : Colors.black12)),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 10, offset: const Offset(0, -2))
+                      ],
+                    ),
+                    child: SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                        child: Row(
+                          children: List.generate(items.length, (idx) {
+                            final isSelected = currentIndex == idx;
+                            return Expanded(
+                              child: InkWell(
+                                onTap: () => onTap(idx),
+                                borderRadius: BorderRadius.circular(12),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? Colors.blueAccent.withOpacity(0.15) : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        items[idx]['icon'] as IconData,
+                                        size: isSelected ? 24 : 22,
+                                        color: isSelected ? Colors.blueAccent : (isDark ? Colors.white60 : Colors.black54),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        items[idx]['title'] as String,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                          color: isSelected ? Colors.blueAccent : (isDark ? Colors.white60 : Colors.black54),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
+            }
+          }
+          EOF
+
+          # 2. ربط MaterialApp في main.dart بمتحكم اللغة عالمياً
           python3 - << 'PYEOF'
           import os, re
 
-          nav_file = 'lib/core/widgets/elegant_bottom_nav.dart'
-          if os.path.exists(nav_file):
-              with open(nav_file, 'r', encoding='utf-8') as f:
+          main_path = 'lib/main.dart'
+          if os.path.exists(main_path):
+              with open(main_path, 'r', encoding='utf-8') as f:
                   code = f.read()
 
-              # تصحيح إزاحة المؤشر لتتطابق مع الأيقونات في واجهة RTL و LTR
-              code = re.sub(
-                  r'left:\s*([^,\n]+)',
-                  lambda m: f"left: (Directionality.of(context) == TextDirection.rtl ? ({m.group(1).replace('currentIndex', '(4 - currentIndex)').replace('widget.currentIndex', '(4 - widget.currentIndex)')}) : {m.group(1)})" if ('currentIndex' in m.group(1) and 'TextDirection.rtl' not in m.group(1)) else m.group(0),
-                  code
-              )
-              code = re.sub(
-                  r'Alignment\(\s*-1\.0\s*\+\s*\(?([^,\n]+)',
-                  lambda m: f"Alignment((Directionality.of(context) == TextDirection.rtl ? 1.0 - ({m.group(1)}) : -1.0 + ({m.group(1)}))" if ('TextDirection.rtl' not in m.group(0)) else m.group(0),
-                  code
-              )
+              if 'language_controller.dart' not in code:
+                  code = "import 'package:safety_core_ai/core/services/language_controller.dart';\n" + code
 
-              with open(nav_file, 'w', encoding='utf-8') as f:
+              if 'LanguageController.currentLocale' not in code:
+                  match = re.search(r'return\s+MaterialApp\s*\(', code)
+                  if match:
+                      start = match.start()
+                      depth = 1
+                      i = match.end()
+                      while i < len(code) and depth > 0:
+                          if code[i] == '(': depth += 1
+                          elif code[i] == ')': depth -= 1
+                          i += 1
+                      
+                      mat_inner = code[match.end():i-1]
+                      mat_inner_clean = re.sub(r'locale:\s*const\s*Locale\([^)]+\)\s*,?', '', mat_inner)
+                      mat_inner_clean = re.sub(r'locale:\s*Locale\([^)]+\)\s*,?', '', mat_inner_clean)
+
+                      wrapped = f"""return ValueListenableBuilder<Locale>(
+            valueListenable: LanguageController.currentLocale,
+            builder: (context, activeLocale, _) {{
+              return MaterialApp(
+                locale: activeLocale,
+                {mat_inner_clean.strip()}
+              );
+            }},
+          )"""
+                      # فحص وجود الفاصلة المنقوطة
+                      tail = code[i:].lstrip()
+                      if tail.startswith(';'):
+                          tail = tail[1:]
+                      code = code[:start] + wrapped + ';' + tail
+                      print("Successfully attached LanguageController to MaterialApp root!")
+
+              with open(main_path, 'w', encoding='utf-8') as f:
                   f.write(code)
-              print("Navigation indicator successfully aligned.")
           PYEOF
 
-      - name: 8. Integrate Gemini Advisor Service (Fix 404 Safely)
+      - name: 9. Integrate Gemini Service with UTF-8 & Direct Query
         run: |
           mkdir -p lib/core/services
           cat << 'EOF' > lib/core/services/gemini_advisor_service.dart
@@ -502,44 +595,87 @@ jobs:
             static const String _p2 = "U7DW4iZleIbW9XiLk80hsodclflXHfdbd4nKBw";
             static const String apiKey = "$_p1$_p2";
 
-            static Future<FunctionResponse> query(dynamic body) async {
-              String prompt = "";
-              if (body is Map) {
-                prompt = (body['prompt'] ?? body['message'] ?? body['content'] ?? "").toString();
-              } else if (body is String) {
-                prompt = body;
+            static String _extractPrompt(dynamic body) {
+              if (body == null) return "";
+              if (body is String) {
+                try {
+                  final decoded = jsonDecode(body);
+                  return _extractPrompt(decoded);
+                } catch (_) {
+                  return body.trim();
+                }
               }
+              if (body is Map) {
+                for (final k in [
+                  'prompt', 'message', 'question', 'query', 'text', 'content',
+                  'input', 'body', 'user_message', 'msg'
+                ]) {
+                  final val = body[k];
+                  if (val != null && val.toString().trim().isNotEmpty) {
+                    return val.toString().trim();
+                  }
+                }
+                for (final listKey in ['messages', 'history', 'conversation']) {
+                  if (body[listKey] is List && (body[listKey] as List).isNotEmpty) {
+                    final last = (body[listKey] as List).last;
+                    return _extractPrompt(last);
+                  }
+                }
+                for (final v in body.values) {
+                  if (v is String && v.trim().isNotEmpty) return v.trim();
+                  if (v is Map) {
+                    final nested = _extractPrompt(v);
+                    if (nested.isNotEmpty) return nested;
+                  }
+                }
+              }
+              return body.toString().trim();
+            }
+
+            static Future<FunctionResponse> query(dynamic body) async {
+              final userPrompt = _extractPrompt(body);
 
               try {
                 final url = Uri.parse("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey");
                 final client = HttpClient();
                 final request = await client.postUrl(url);
-                request.headers.set('Content-Type', 'application/json');
+                request.headers.contentType = ContentType("application", "json", charset: "utf-8");
+                request.headers.set('x-goog-api-key', apiKey);
 
-                final payload = jsonEncode({
+                final payloadMap = {
                   "contents": [
                     {
                       "role": "user",
-                      "parts": [{"text": prompt.isNotEmpty ? prompt : "مرحباً"}]
+                      "parts": [
+                        {"text": userPrompt.isNotEmpty ? userPrompt : "كيف تعد نظام تصاريح العمل في الموقع وفق معايير السلامة المهنية؟"}
+                      ]
                     }
                   ],
                   "system_instruction": {
                     "parts": [
-                      {"text": "أنت استشاري وخبير معتمد في السلامة والصحة المهنية (HSE Advisor). أجب بأسلوب هندسي دقيق وموجز وفق معايير OSHA و ISO 45001 والأنظمة السعودية الميدانية باللغة العربية."}
+                      {
+                        "text": "أنت استشاري وخبير معتمد في السلامة والصحة المهنية (HSE Advisor). أجب بأسلوب هندسي دقيق وموجز وفق معايير OSHA و ISO 45001 والأنظمة السعودية الميدانية باللغة العربية."
+                      }
                     ]
                   }
-                });
+                };
 
-                request.write(payload);
+                final payloadBytes = utf8.encode(jsonEncode(payloadMap));
+                request.add(payloadBytes);
+
                 final response = await request.close();
                 final responseBody = await response.transform(utf8.decoder).join();
                 final json = jsonDecode(responseBody);
 
-                String reply = "لم أتمكن من الحصول على إجابة.";
+                String reply = "لم يتم تلقي إجابة من المستشار.";
                 if (json['candidates'] != null && (json['candidates'] as List).isNotEmpty) {
-                  reply = json['candidates'][0]['content']['parts'][0]['text'] ?? reply;
+                  final firstCand = json['candidates'][0];
+                  final parts = firstCand['content']?['parts'] as List?;
+                  if (parts != null && parts.isNotEmpty) {
+                    reply = parts[0]['text'] ?? reply;
+                  }
                 } else if (json['error'] != null) {
-                  reply = "تنبيه: ${json['error']['message']}";
+                  reply = "خطأ في خدمة الذكاء الاصطناعي: ${json['error']['message'] ?? json['error']}";
                 }
 
                 return FunctionResponse(
@@ -557,6 +693,7 @@ jobs:
                     'reply': "تعذر الاتصال بالمستشار: $e",
                     'content': [{'text': "تعذر الاتصال بالمستشار: $e"}],
                     'text': "تعذر الاتصال بالمستشار: $e",
+                    'message': "تعذر الاتصال بالمستشار: $e",
                   },
                   status: 200,
                 );
@@ -576,7 +713,7 @@ jobs:
                           content = f.read()
 
                       if 'hse-advisor' in content:
-                          print(f"Applying direct Gemini integration to: {p}")
+                          print(f"Patching Gemini to: {p}")
                           if 'gemini_advisor_service.dart' not in content:
                               content = "import 'package:safety_core_ai/core/services/gemini_advisor_service.dart';\n" + content
 
@@ -599,21 +736,21 @@ jobs:
           sed -i 's/intl:.*/intl: any/g' pubspec.yaml || true
           flutter pub get
 
-      - name: 9. Generate Localization
+      - name: 10. Generate Localization
         run: |
           if [ -f "l10n.yaml" ]; then
             flutter gen-l10n || true
           fi
 
-      - name: 10. Build Release APK
+      - name: 11. Build Release APK
         run: |
           flutter build apk --release --no-tree-shake-icons \
             --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
             --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
 
-      - name: 11. Upload APK as Artifact
+      - name: 12. Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: safety-core-ai-final-enhanced
+          name: SafetyCoreAI-Global-Update
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
