@@ -647,7 +647,7 @@ jobs:
                   f.write(code)
           PYEOF
 
-      - name: 9. Integrate Gemini Advisor Service (UTF-8 Encoded)
+      - name: 9. Dynamic Gemini Model Discovery & Multi-Model Engine
         run: |
           mkdir -p lib/core/services
           cat << 'EOF' > lib/core/services/gemini_advisor_service.dart
@@ -697,72 +697,113 @@ jobs:
               return body.toString().trim();
             }
 
+            static Future<List<String>> _discoverAvailableModels(HttpClient client) async {
+              try {
+                final url = Uri.parse("https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey");
+                final req = await client.getUrl(url);
+                final res = await req.close();
+                if (res.statusCode == 200) {
+                  final bodyStr = await res.transform(utf8.decoder).join();
+                  final json = jsonDecode(bodyStr);
+                  if (json['models'] is List) {
+                    final found = <String>[];
+                    for (final m in json['models']) {
+                      final name = (m['name'] as String? ?? '').replaceFirst('models/', '');
+                      final methods = m['supportedGenerationMethods'] as List? ?? [];
+                      if (methods.contains('generateContent')) {
+                        found.add(name);
+                      }
+                    }
+                    if (found.isNotEmpty) {
+                      found.sort((a, b) {
+                        final aScore = a.contains('2.0') || a.contains('flash') ? 0 : 1;
+                        final bScore = b.contains('2.0') || b.contains('flash') ? 0 : 1;
+                        return aScore.compareTo(bScore);
+                      });
+                      return found;
+                    }
+                  }
+                }
+              } catch (_) {}
+              return [
+                'gemini-2.0-flash',
+                'gemini-1.5-flash-latest',
+                'gemini-2.5-flash',
+                'gemini-1.5-pro-latest',
+                'gemini-pro'
+              ];
+            }
+
             static Future<FunctionResponse> query(dynamic body) async {
               final userPrompt = _extractPrompt(body);
+              final client = HttpClient();
 
-              try {
-                final url = Uri.parse("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey");
-                final client = HttpClient();
-                final request = await client.postUrl(url);
-                request.headers.contentType = ContentType("application", "json", charset: "utf-8");
-                request.headers.set('x-goog-api-key', apiKey);
+              final candidateModels = await _discoverAvailableModels(client);
+              String lastError = "لم يتم الحصول على رد من المستشار.";
 
-                final payloadMap = {
-                  "contents": [
-                    {
-                      "role": "user",
+              for (final model in candidateModels) {
+                try {
+                  final url = Uri.parse("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey");
+                  final request = await client.postUrl(url);
+                  request.headers.contentType = ContentType("application", "json", charset: "utf-8");
+                  request.headers.set('x-goog-api-key', apiKey);
+
+                  final payloadMap = {
+                    "contents": [
+                      {
+                        "role": "user",
+                        "parts": [
+                          {"text": userPrompt.isNotEmpty ? userPrompt : "كيف يتم إعداد نظام تصاريح العمل في الموقع؟"}
+                        ]
+                      }
+                    ],
+                    "system_instruction": {
                       "parts": [
-                        {"text": userPrompt.isNotEmpty ? userPrompt : "كيف تعد نظام تصاريح العمل في الموقع وفق معايير السلامة المهنية؟"}
+                        {
+                          "text": "أنت استشاري وخبير معتمد في السلامة والصحة المهنية (HSE Advisor). أجب بأسلوب هندسي دقيق وموجز وواضح وفق معايير OSHA و ISO 45001 والأنظمة الميدانية بلغة عربية احترافية."
+                        }
                       ]
                     }
-                  ],
-                  "system_instruction": {
-                    "parts": [
-                      {
-                        "text": "أنت استشاري وخبير معتمد في السلامة والصحة المهنية (HSE Advisor). أجب بأسلوب هندسي دقيق وموجز وفق معايير OSHA و ISO 45001 والأنظمة السعودية الميدانية باللغة العربية."
-                      }
-                    ]
+                  };
+
+                  request.add(utf8.encode(jsonEncode(payloadMap)));
+                  final response = await request.close();
+                  final responseBody = await response.transform(utf8.decoder).join();
+                  final json = jsonDecode(responseBody);
+
+                  if (json['candidates'] != null && (json['candidates'] as List).isNotEmpty) {
+                    final firstCand = json['candidates'][0];
+                    final parts = firstCand['content']?['parts'] as List?;
+                    if (parts != null && parts.isNotEmpty) {
+                      final reply = parts[0]['text'] ?? '';
+                      return FunctionResponse(
+                        data: {
+                          'reply': reply,
+                          'content': [{'text': reply}],
+                          'text': reply,
+                          'message': reply,
+                        },
+                        status: 200,
+                      );
+                    }
+                  } else if (json['error'] != null) {
+                    lastError = json['error']['message'] ?? json['error'].toString();
+                    continue;
                   }
-                };
-
-                final payloadBytes = utf8.encode(jsonEncode(payloadMap));
-                request.add(payloadBytes);
-
-                final response = await request.close();
-                final responseBody = await response.transform(utf8.decoder).join();
-                final json = jsonDecode(responseBody);
-
-                String reply = "لم يتم تلقي إجابة من المستشار.";
-                if (json['candidates'] != null && (json['candidates'] as List).isNotEmpty) {
-                  final firstCand = json['candidates'][0];
-                  final parts = firstCand['content']?['parts'] as List?;
-                  if (parts != null && parts.isNotEmpty) {
-                    reply = parts[0]['text'] ?? reply;
-                  }
-                } else if (json['error'] != null) {
-                  reply = "خطأ في خدمة الذكاء الاصطناعي: ${json['error']['message'] ?? json['error']}";
+                } catch (e) {
+                  lastError = e.toString();
                 }
-
-                return FunctionResponse(
-                  data: {
-                    'reply': reply,
-                    'content': [{'text': reply}],
-                    'text': reply,
-                    'message': reply,
-                  },
-                  status: 200,
-                );
-              } catch (e) {
-                return FunctionResponse(
-                  data: {
-                    'reply': "تعذر الاتصال بالمستشار: $e",
-                    'content': [{'text': "تعذر الاتصال بالمستشار: $e"}],
-                    'text': "تعذر الاتصال بالمستشار: $e",
-                    'message': "تعذر الاتصال بالمستشار: $e",
-                  },
-                  status: 200,
-                );
               }
+
+              return FunctionResponse(
+                data: {
+                  'reply': "تنبيه: $lastError",
+                  'content': [{'text': "تنبيه: $lastError"}],
+                  'text': "تنبيه: $lastError",
+                  'message': "تنبيه: $lastError",
+                },
+                status: 200,
+              );
             }
           }
           EOF
@@ -815,6 +856,6 @@ jobs:
       - name: 12. Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SafetyCoreAI-Fixed-Release
+          name: SafetyCoreAI-Intelligent-Advisor
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
