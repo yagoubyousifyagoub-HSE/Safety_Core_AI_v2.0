@@ -144,7 +144,9 @@ jobs:
                             onChanged: (val) {
                               setState(() {});
                               widget.onChanged?.call(val);
-                              if (val.length == widget.length) widget.onCompleted?.call(val);
+                              if (val.length == widget.length) {
+                                widget.onCompleted?.call(val);
+                              }
                             },
                           ),
                         ),
@@ -440,23 +442,33 @@ jobs:
           }
           EOF
 
-      - name: 8. Fix Global MaterialApp Binding & Bottom Navigation
+      - name: 8. Flexible Bottom Navigation Supporting All Arguments
         run: |
-          # 1. تحديث شريط التنقل السفلي ليتفاعل تلقائياً مع اللغة والاتجاه دون قفز المؤشر
           mkdir -p lib/core/widgets
           cat << 'EOF' > lib/core/widgets/elegant_bottom_nav.dart
           import 'package:flutter/material.dart';
           import '../services/language_controller.dart';
 
           class ElegantBottomNav extends StatelessWidget {
-            final int currentIndex;
-            final Function(int) onTap;
+            final int? currentIndex;
+            final int? index;
+            final ValueChanged<int>? onTap;
+            final ValueChanged<int>? onChanged;
 
             const ElegantBottomNav({
               super.key,
-              required this.currentIndex,
-              required this.onTap,
+              this.currentIndex,
+              this.index,
+              this.onTap,
+              this.onChanged,
             });
+
+            int get _selectedIndex => currentIndex ?? index ?? 0;
+
+            void _handleTap(int idx) {
+              onTap?.call(idx);
+              onChanged?.call(idx);
+            }
 
             @override
             Widget build(BuildContext context) {
@@ -488,10 +500,10 @@ jobs:
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                         child: Row(
                           children: List.generate(items.length, (idx) {
-                            final isSelected = currentIndex == idx;
+                            final isSelected = _selectedIndex == idx;
                             return Expanded(
                               child: InkWell(
-                                onTap: () => onTap(idx),
+                                onTap: () => _handleTap(idx),
                                 borderRadius: BorderRadius.circular(12),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 200),
@@ -535,7 +547,6 @@ jobs:
           }
           EOF
 
-          # 2. ربط MaterialApp في main.dart بمتحكم اللغة عالمياً
           python3 - << 'PYEOF'
           import os, re
 
@@ -571,18 +582,17 @@ jobs:
               );
             }},
           )"""
-                      # فحص وجود الفاصلة المنقوطة
                       tail = code[i:].lstrip()
                       if tail.startswith(';'):
                           tail = tail[1:]
                       code = code[:start] + wrapped + ';' + tail
-                      print("Successfully attached LanguageController to MaterialApp root!")
+                      print("Attached LanguageController to main.dart")
 
               with open(main_path, 'w', encoding='utf-8') as f:
                   f.write(code)
           PYEOF
 
-      - name: 9. Integrate Gemini Service with UTF-8 & Direct Query
+      - name: 9. Integrate Gemini Advisor Service (UTF-8 Encoded)
         run: |
           mkdir -p lib/core/services
           cat << 'EOF' > lib/core/services/gemini_advisor_service.dart
@@ -713,7 +723,6 @@ jobs:
                           content = f.read()
 
                       if 'hse-advisor' in content:
-                          print(f"Patching Gemini to: {p}")
                           if 'gemini_advisor_service.dart' not in content:
                               content = "import 'package:safety_core_ai/core/services/gemini_advisor_service.dart';\n" + content
 
@@ -751,6 +760,6 @@ jobs:
       - name: 12. Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SafetyCoreAI-Global-Update
+          name: SafetyCoreAI-Production-APK
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
