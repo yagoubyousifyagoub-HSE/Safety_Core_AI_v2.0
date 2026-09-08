@@ -70,6 +70,6 @@ jobs:
       - name: 9. Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: safety-core-ai-online-release
+          name: safety-core-ai-release
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
