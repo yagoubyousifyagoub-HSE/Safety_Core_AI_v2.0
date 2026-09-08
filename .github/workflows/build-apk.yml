@@ -28,11 +28,16 @@ jobs:
           if ls *.zip 1> /dev/null 2>&1; then
             mkdir -p extracted_temp
             unzip -o \*.zip -d extracted_temp/
+            
+            # البحث عن مسار pubspec.yaml ونقل ملفات المشروع للمسار الرئيسي
             ROOT_PATH=$(find extracted_temp -type f -name "pubspec.yaml" -exec dirname {} \; | head -n 1)
             if [ -n "$ROOT_PATH" ]; then
               cp -rf "$ROOT_PATH"/* ./
             fi
-            rm -rf extracted_temp
+            
+            # منح صلاحيات التعديل الكاملة والحذف الجذري لتفادي Permission denied
+            chmod -R 777 extracted_temp || true
+            sudo rm -rf extracted_temp
           fi
 
       - name: 5. Ensure Android Platform & Grant Permissions
@@ -46,7 +51,7 @@ jobs:
           # تثبيت اسم التطبيق
           sed -i 's/android:label="[^"]*"/android:label="Safety Core AI"/g' android/app/src/main/AndroidManifest.xml || true
 
-          # منح إذن الإنترنت والشبكة لمنع تعذر الاتصال بالخوادم
+          # منح إذن الإنترنت والشبكة لمنع انقطاع الاتصال بخوادم Supabase
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' android/app/src/main/AndroidManifest.xml
 
       - name: 6. Resolve Dependencies & Fix Keys
