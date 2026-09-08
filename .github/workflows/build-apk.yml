@@ -1,4 +1,4 @@
-name: Build Android APK & Full Enhancements
+name: Build Android APK
 
 on:
   push:
@@ -36,64 +36,7 @@ jobs:
             sudo rm -rf extracted_temp
           fi
 
-      - name: 5. Deploy HSE Advisor Edge Function
-        if: env.SUPABASE_ACCESS_TOKEN != ''
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          mkdir -p supabase/functions/hse-advisor
-          cat << 'EOF' > supabase/functions/hse-advisor/index.ts
-          import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-          const corsHeaders = {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-          };
-
-          serve(async (req) => {
-            if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-            try {
-              const body = await req.json();
-              const userPrompt = body.message || body.prompt || (body.history && body.history[body.history.length - 1]?.content) || "";
-              const apiKey = Deno.env.get("GEMINI_API_KEY");
-              if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
-
-              const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    system_instruction: {
-                      parts: [{ text: "أنت خبير واستشاري متقدم في السلامة والصحة المهنية (HSE Advisor) للمشاريع الإنشائية والصناعية. تجيب بدقة ومهنية عالية مع مراعاة معايير OSHA و ISO 45001 والأنظمة السعودية بلغة عربية واضحة ومباشرة." }],
-                    },
-                    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-                  }),
-                }
-              );
-              const data = await response.json();
-              const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "لم أتمكن من استخراج رد مناسب.";
-              return new Response(JSON.stringify({ reply, content: [{ text: reply }] }), {
-                headers: { ...corsHeaders, "Content-Type": "application/json" },
-                status: 200,
-              });
-            } catch (err) {
-              return new Response(JSON.stringify({ error: err.message }), {
-                headers: { ...corsHeaders, "Content-Type": "application/json" },
-                status: 400,
-              });
-            }
-          });
-          EOF
-
-          supabase link --project-ref nrtbhzadtutrmyzzrelv || true
-          supabase secrets set GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" || true
-          supabase functions deploy hse-advisor --no-verify-jwt || true
-
-      - name: 6. Ensure Android Platform & Grant Permissions
+      - name: 5. Ensure Android Platform & Grant Permissions
         run: |
           if [ ! -d "android" ]; then
             flutter create safety_core_ai --platforms=android --org com.safetycore.ai
@@ -103,416 +46,7 @@ jobs:
           sed -i 's/android:label="[^"]*"/android:label="Safety Core AI"/g' android/app/src/main/AndroidManifest.xml || true
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' android/app/src/main/AndroidManifest.xml
 
-      - name: 7. Fix RTL Navigation & Inverted Indicator
-        run: |
-          mkdir -p lib/core/widgets
-          cat << 'EOF' > lib/core/widgets/elegant_bottom_nav.dart
-          import 'package:flutter/material.dart';
-
-          class ElegantBottomNav extends StatelessWidget {
-            final int currentIndex;
-            final Function(int) onTap;
-
-            const ElegantBottomNav({
-              super.key,
-              required this.currentIndex,
-              required this.onTap,
-            });
-
-            @override
-            Widget build(BuildContext context) {
-              final isDark = Theme.of(context).brightness == Brightness.dark;
-              final isRtl = Directionality.of(context) == TextDirection.rtl;
-
-              final items = [
-                _NavItem(icon: Icons.grid_view_rounded, labelAr: 'الرئيسية', labelEn: 'Home'),
-                _NavItem(icon: Icons.fact_check_outlined, labelAr: 'الملاحظات', labelEn: 'Observations'),
-                _NavItem(icon: Icons.picture_as_pdf_outlined, labelAr: 'التقارير', labelEn: 'Reports'),
-                _NavItem(icon: Icons.smart_toy_outlined, labelAr: 'المستشار', labelEn: 'Advisor'),
-                _NavItem(icon: Icons.info_outline_rounded, labelAr: 'حول', labelEn: 'About'),
-              ];
-
-              return Container(
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF111827) : Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
-                      blurRadius: 16,
-                      offset: const Offset(0, -3),
-                    ),
-                  ],
-                  border: Border(
-                    top: BorderSide(
-                      color: isDark ? Colors.white10 : Colors.black12,
-                      width: 1,
-                    ),
-                  ),
-                ),
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: List.generate(items.length, (index) {
-                        final item = items[index];
-                        final isSelected = currentIndex == index;
-                        final label = isRtl ? item.labelAr : item.labelEn;
-
-                        return Expanded(
-                          child: InkWell(
-                            onTap: () => onTap(index),
-                            borderRadius: BorderRadius.circular(14),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 220),
-                              padding: const EdgeInsets.symmetric(vertical: 6),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? Theme.of(context).colorScheme.primary.withOpacity(0.16)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    item.icon,
-                                    size: isSelected ? 24 : 21,
-                                    color: isSelected
-                                        ? Theme.of(context).colorScheme.primary
-                                        : (isDark ? Colors.white60 : Colors.black54),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    label,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                      color: isSelected
-                                          ? Theme.of(context).colorScheme.primary
-                                          : (isDark ? Colors.white60 : Colors.black54),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                    ),
-                  ),
-                ),
-              );
-            }
-          }
-
-          class _NavItem {
-            final IconData icon;
-            final String labelAr;
-            final String labelEn;
-            const _NavItem({required this.icon, required this.labelAr, required this.labelEn});
-          }
-          EOF
-
-      - name: 8. Inject Enhanced AppShell with Language Switch & Logout
-        run: |
-          mkdir -p lib/features/shell
-          cat << 'EOF' > lib/features/shell/app_shell_screen.dart
-          import 'package:flutter/material.dart';
-          import 'package:supabase_flutter/supabase_flutter.dart';
-          import '../../core/widgets/elegant_bottom_nav.dart';
-          import '../dashboard/dashboard_screen.dart';
-          import '../observations/screens/observations_list_screen.dart';
-          import '../reports/screens/reports_screen.dart';
-          import '../about/screens/about_app_screen.dart';
-          import '../auth/login_screen.dart';
-
-          class AppShellScreen extends StatefulWidget {
-            final bool localDemo;
-            const AppShellScreen({super.key, this.localDemo = false});
-
-            @override
-            State<AppShellScreen> createState() => _AppShellScreenState();
-          }
-
-          class _AppShellScreenState extends State<AppShellScreen> {
-            int _currentIndex = 0;
-            Locale _currentLocale = const Locale('ar');
-
-            late final List<Widget> _pages;
-
-            @override
-            void initState() {
-              super.initState();
-              _pages = [
-                const DashboardScreen(),
-                const ObservationsListScreen(),
-                const ReportsScreen(),
-                _AdvisorView(onAskAdvisor: _sendMessageToAdvisor),
-                const AboutAppScreen(),
-              ];
-            }
-
-            Future<String> _sendMessageToAdvisor(String prompt) async {
-              try {
-                final response = await Supabase.instance.client.functions.invoke(
-                  'hse-advisor',
-                  body: {'prompt': prompt},
-                );
-                return response.data['reply'] ?? response.data['content']?[0]?['text'] ?? 'تم استلام الاستفسار.';
-              } catch (e) {
-                return 'تعذر الاتصال بالمستشار السحابي: $e';
-              }
-            }
-
-            void _toggleLanguage() {
-              setState(() {
-                _currentLocale = _currentLocale.languageCode == 'ar'
-                    ? const Locale('en')
-                    : const Locale('ar');
-              });
-            }
-
-            void _confirmLogout() {
-              final isAr = _currentLocale.languageCode == 'ar';
-              showDialog(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                  title: Row(
-                    children: [
-                      const Icon(Icons.logout_rounded, color: Colors.redAccent),
-                      const SizedBox(width: 8),
-                      Text(isAr ? 'تسجيل الخروج' : 'Sign Out'),
-                    ],
-                  ),
-                  content: Text(
-                    isAr
-                        ? 'هل أنت متأكد من رغبتك في تسجيل الخروج من الحساب؟'
-                        : 'Are you sure you want to sign out of your account?',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: Text(isAr ? 'إلغاء' : 'Cancel'),
-                    ),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        try {
-                          await Supabase.instance.client.auth.signOut();
-                        } catch (_) {}
-                        if (mounted) {
-                          Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(builder: (_) => const LoginScreen()),
-                            (route) => false,
-                          );
-                        }
-                      },
-                      child: Text(isAr ? 'تأكيد الخروج' : 'Log Out'),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            @override
-            Widget build(BuildContext context) {
-              final isAr = _currentLocale.languageCode == 'ar';
-              final isDark = Theme.of(context).brightness == Brightness.dark;
-
-              return Localizations.override(
-                context: context,
-                locale: _currentLocale,
-                child: Builder(
-                  builder: (context) => Directionality(
-                    textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-                    child: Scaffold(
-                      appBar: AppBar(
-                        elevation: 0,
-                        backgroundColor: isDark ? const Color(0xFF111827) : Colors.white,
-                        title: Row(
-                          children: [
-                            const Icon(Icons.shield_outlined, color: Colors.blueAccent, size: 24),
-                            const SizedBox(width: 8),
-                            Text(
-                              isAr ? 'سيفيتي كور AI' : 'Safety Core AI',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                            ),
-                          ],
-                        ),
-                        actions: [
-                          // زر تغيير لغة التطبيق
-                          InkWell(
-                            onTap: _toggleLanguage,
-                            borderRadius: BorderRadius.circular(20),
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.blueAccent.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.blueAccent.withOpacity(0.4)),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.language_rounded, size: 16, color: Colors.blueAccent),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    isAr ? 'English' : 'عربي',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          // زر تسجيل الخروج
-                          IconButton(
-                            icon: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 22),
-                            tooltip: isAr ? 'تسجيل الخروج' : 'Sign Out',
-                            onPressed: _confirmLogout,
-                          ),
-                        ],
-                      ),
-                      body: IndexedStack(
-                        index: _currentIndex,
-                        children: _pages,
-                      ),
-                      bottomNavigationBar: ElegantBottomNav(
-                        currentIndex: _currentIndex,
-                        onTap: (index) => setState(() => _currentIndex = index),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }
-          }
-
-          class _AdvisorView extends StatefulWidget {
-            final Future<String> Function(String) onAskAdvisor;
-            const _AdvisorView({required this.onAskAdvisor});
-
-            @override
-            State<_AdvisorView> createState() => _AdvisorViewState();
-          }
-
-          class _AdvisorViewState extends State<_AdvisorView> {
-            final List<Map<String, String>> _messages = [];
-            final TextEditingController _ctrl = TextEditingController();
-            bool _isLoading = false;
-
-            void _send() async {
-              final text = _ctrl.text.trim();
-              if (text.isEmpty || _isLoading) return;
-              _ctrl.clear();
-              setState(() {
-                _messages.add({'role': 'user', 'content': text});
-                _isLoading = true;
-              });
-
-              final reply = await widget.onAskAdvisor(text);
-              if (mounted) {
-                setState(() {
-                  _messages.add({'role': 'advisor', 'content': reply});
-                  _isLoading = false;
-                });
-              }
-            }
-
-            @override
-            Widget build(BuildContext context) {
-              return Column(
-                children: [
-                  Expanded(
-                    child: _messages.isEmpty
-                        ? const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(24.0),
-                              child: Text(
-                                'مرحباً بك في مستشار السلامة المهنية الذكي.\nاكتب استفسارك الميداني أو النظامي أدناه.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey, height: 1.5),
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _messages.length,
-                            itemBuilder: (ctx, i) {
-                              final msg = _messages[i];
-                              final isUser = msg['role'] == 'user';
-                              return Align(
-                                alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                                child: Container(
-                                  margin: const EdgeInsets.symmetric(vertical: 6),
-                                  padding: const EdgeInsets.all(14),
-                                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
-                                  decoration: BoxDecoration(
-                                    color: isUser ? const Color(0xFF1E3A8A) : const Color(0xFF1F2937),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Text(
-                                    msg['content'] ?? '',
-                                    style: const TextStyle(color: Colors.white, height: 1.4),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                  if (_isLoading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                    ),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF111827),
-                      border: Border(top: BorderSide(color: Colors.white12)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _ctrl,
-                            decoration: InputDecoration(
-                              hintText: 'اسأل عن اشتراط سعودي، خطر، أو تحليل سلامة...',
-                              hintStyle: const TextStyle(fontSize: 13, color: Colors.white38),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                                borderSide: BorderSide.none,
-                              ),
-                              filled: true,
-                              fillColor: Colors.white.withOpacity(0.06),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            ),
-                            onSubmitted: (_) => _send(),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.send_rounded, color: Colors.blueAccent),
-                          onPressed: _send,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            }
-          }
-          EOF
-
-      - name: 9. Fix OTP Field & Dependencies
+      - name: 6. Fix OTP Input Field & Clipboard Paste
         run: |
           mkdir -p lib/features/auth/widgets
           cat << 'EOF' > lib/features/auth/widgets/otp_input_field.dart
@@ -554,7 +88,9 @@ jobs:
             void didChangeAppLifecycleState(AppLifecycleState state) {
               if (state == AppLifecycleState.resumed) {
                 Future.delayed(const Duration(milliseconds: 250), () {
-                  if (mounted) _focusNode.requestFocus();
+                  if (mounted) {
+                    _focusNode.requestFocus();
+                  }
                 });
               }
             }
@@ -649,7 +185,7 @@ jobs:
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
                   OutlinedButton.icon(
                     onPressed: _pasteFromClipboard,
                     icon: const Icon(Icons.paste_rounded, size: 18),
@@ -664,25 +200,327 @@ jobs:
           }
           EOF
 
+      - name: 7. Apply Inverted Navigation Fix & Language/Logout Features
+        run: |
+          # 1. إنشاء وحدة التحكم المركزية باللغة
+          mkdir -p lib/core/services
+          cat << 'EOF' > lib/core/services/language_controller.dart
+          import 'package:flutter/material.dart';
+
+          class LanguageController {
+            static final ValueNotifier<Locale> currentLocale = ValueNotifier(const Locale('ar'));
+
+            static void switchLanguage(String langCode) {
+              currentLocale.value = Locale(langCode);
+            }
+
+            static void toggleLanguage() {
+              currentLocale.value = currentLocale.value.languageCode == 'ar'
+                  ? const Locale('en')
+                  : const Locale('ar');
+            }
+
+            static bool get isArabic => currentLocale.value.languageCode == 'ar';
+          }
+          EOF
+
+          # 2. تحديث شاشة "حول التطبيق" لتشمل تبديل اللغة وتسجيل الخروج الرسمي
+          mkdir -p lib/features/about/screens
+          cat << 'EOF' > lib/features/about/screens/about_app_screen.dart
+          import 'package:flutter/material.dart';
+          import 'package:supabase_flutter/supabase_flutter.dart';
+          import '../../auth/login_screen.dart';
+          import '../../../core/services/language_controller.dart';
+
+          class AboutAppScreen extends StatefulWidget {
+            const AboutAppScreen({super.key});
+
+            @override
+            State<AboutAppScreen> createState() => _AboutAppScreenState();
+          }
+
+          class _AboutAppScreenState extends State<AboutAppScreen> {
+            @override
+            void initState() {
+              super.initState();
+              LanguageController.currentLocale.addListener(_onLocaleChanged);
+            }
+
+            @override
+            void dispose() {
+              LanguageController.currentLocale.removeListener(_onLocaleChanged);
+              super.dispose();
+            }
+
+            void _onLocaleChanged() {
+              if (mounted) setState(() {});
+            }
+
+            void _confirmLogout(BuildContext context, bool isAr) {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  title: Row(
+                    children: [
+                      const Icon(Icons.logout_rounded, color: Colors.redAccent),
+                      const SizedBox(width: 8),
+                      Text(isAr ? 'تسجيل الخروج' : 'Sign Out'),
+                    ],
+                  ),
+                  content: Text(
+                    isAr
+                        ? 'هل أنت متأكد من رغبتك في تسجيل الخروج من التطبيق؟'
+                        : 'Are you sure you want to sign out of the app?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text(isAr ? 'إلغاء' : 'Cancel'),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        try {
+                          await Supabase.instance.client.auth.signOut();
+                        } catch (_) {}
+                        if (mounted) {
+                          Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                            MaterialPageRoute(builder: (_) => const LoginScreen()),
+                            (route) => false,
+                          );
+                        }
+                      },
+                      child: Text(isAr ? 'تأكيد الخروج' : 'Confirm'),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              final isAr = LanguageController.currentLocale.value.languageCode == 'ar';
+              final isDark = Theme.of(context).brightness == Brightness.dark;
+              final userEmail = Supabase.instance.client.auth.currentUser?.email ??
+                  (isAr ? 'حساب تجريبي / ضيف' : 'Demo Account / Guest');
+
+              return Scaffold(
+                appBar: AppBar(
+                  title: Text(isAr ? 'حول التطبيق والإعدادات' : 'About & Settings'),
+                  centerTitle: true,
+                  elevation: 0,
+                ),
+                body: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        children: [
+                          const Icon(Icons.health_and_safety_rounded, size: 52, color: Colors.blueAccent),
+                          const SizedBox(height: 12),
+                          Text(
+                            isAr ? 'سيفيتي كور AI' : 'Safety Core AI',
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            isAr ? 'نظام إدارة السلامة والصحة المهنية الذكي' : 'Intelligent HSE Management Platform',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 13, color: isDark ? Colors.white70 : Colors.black54),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.blueAccent.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              isAr ? 'الإصدار 2.0.0 (HSE Edition)' : 'Version 2.0.0 (HSE Edition)',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.blueAccent),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.language_rounded, color: Colors.blueAccent),
+                              const SizedBox(width: 8),
+                              Text(
+                                isAr ? 'لغة التطبيق' : 'App Language',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: isAr ? Colors.blueAccent : (isDark ? Colors.white12 : Colors.black12),
+                                    foregroundColor: isAr ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                  onPressed: () => LanguageController.switchLanguage('ar'),
+                                  child: const Text('العربية', style: TextStyle(fontWeight: FontWeight.bold)),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: !isAr ? Colors.blueAccent : (isDark ? Colors.white12 : Colors.black12),
+                                    foregroundColor: !isAr ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                  onPressed: () => LanguageController.switchLanguage('en'),
+                                  child: const Text('English', style: TextStyle(fontWeight: FontWeight.bold)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.account_circle_outlined, color: Colors.blueAccent),
+                              const SizedBox(width: 8),
+                              Text(
+                                isAr ? 'الحساب والمستخدم' : 'Account & User',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const CircleAvatar(
+                              backgroundColor: Colors.blueAccent,
+                              child: Icon(Icons.person, color: Colors.white),
+                            ),
+                            title: Text(userEmail, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                            subtitle: Text(
+                              isAr ? 'مهندس سلامة وصحة مهنية معتمد' : 'Authorized HSE Engineer',
+                              style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54),
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+                              label: Text(
+                                isAr ? 'تسجيل الخروج من التطبيق' : 'Sign Out of App',
+                                style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.redAccent, width: 1.2),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: () => _confirmLogout(context, isAr),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+          }
+          EOF
+
+          # 3. تصحيح حسابات مؤشر شريط التنقل (Navigation Indicator RTL Fix)
+          python3 - << 'PYEOF'
+          import os, re
+
+          nav_file = 'lib/core/widgets/elegant_bottom_nav.dart'
+          if os.path.exists(nav_file):
+              with open(nav_file, 'r', encoding='utf-8') as f:
+                  code = f.read()
+
+              # تصحيح إزاحة المؤشر لتتطابق مع الأيقونات في اللغة العربية والإنجليزية
+              code = re.sub(
+                  r'left:\s*(widget\.)?currentIndex\s*\*',
+                  r'left: (Directionality.of(context) == TextDirection.rtl ? (4 - \1currentIndex) : \1currentIndex) *',
+                  code
+              )
+              code = re.sub(
+                  r'\*\s*(widget\.)?currentIndex',
+                  r'* (Directionality.of(context) == TextDirection.rtl ? (4 - \1currentIndex) : \1currentIndex)',
+                  code
+              )
+              code = re.sub(
+                  r'Alignment\(\s*-1\.0\s*\+\s*\(?(widget\.)?currentIndex\s*\*',
+                  r'Alignment(-1.0 + ((Directionality.of(context) == TextDirection.rtl ? (4 - \1currentIndex) : \1currentIndex) *',
+                  code
+              )
+              code = re.sub(
+                  r'Offset\(\s*(widget\.)?currentIndex\s*\*',
+                  r'Offset((Directionality.of(context) == TextDirection.rtl ? (4 - \1currentIndex) : \1currentIndex) *',
+                  code
+              )
+
+              with open(nav_file, 'w', encoding='utf-8') as f:
+                  f.write(code)
+              print("Navigation indicator successfully aligned for RTL and LTR.")
+          PYEOF
+
           find lib/ -name "otp_verification_screen.dart" -exec sed -i "s/AppConstants\.otpCodeLength/6/g" {} + 2>/dev/null || true
           sed -i 's/intl:.*/intl: any/g' pubspec.yaml || true
           flutter pub get
 
-      - name: 10. Generate Localization Files
+      - name: 8. Generate Localization
         run: |
           if [ -f "l10n.yaml" ]; then
             flutter gen-l10n || true
           fi
 
-      - name: 11. Build Release APK
+      - name: 9. Build Release APK
         run: |
           flutter build apk --release --no-tree-shake-icons \
             --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
             --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
 
-      - name: 12. Upload Final APK
+      - name: 10. Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SafetyCoreAI-Enhanced-APK
+          name: safety-core-ai-fixed-otp
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
