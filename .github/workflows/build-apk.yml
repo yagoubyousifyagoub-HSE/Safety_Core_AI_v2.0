@@ -440,21 +440,45 @@ jobs:
           }
           EOF
 
-      - name: 8. Flexible Bottom Navigation Supporting All Arguments
+      - name: 8. Fix ElegantBottomNav & NavTabItem & Bind MaterialApp
         run: |
           mkdir -p lib/core/widgets
           cat << 'EOF' > lib/core/widgets/elegant_bottom_nav.dart
           import 'package:flutter/material.dart';
           import '../services/language_controller.dart';
 
+          class NavTabItem {
+            final dynamic icon;
+            final dynamic activeIcon;
+            final dynamic selectedIcon;
+            final dynamic label;
+            final dynamic title;
+            final dynamic text;
+            final dynamic tooltip;
+            final dynamic badge;
+
+            const NavTabItem({
+              this.icon,
+              this.activeIcon,
+              this.selectedIcon,
+              this.label,
+              this.title,
+              this.text,
+              this.tooltip,
+              this.badge,
+            });
+          }
+
           class ElegantBottomNav extends StatelessWidget {
             final int? currentIndex;
             final int? index;
             final ValueChanged<int>? onTap;
             final ValueChanged<int>? onChanged;
-            final dynamic items;
+            final List<dynamic>? items;
             final dynamic elevation;
             final dynamic backgroundColor;
+            final dynamic selectedItemColor;
+            final dynamic unselectedItemColor;
 
             const ElegantBottomNav({
               super.key,
@@ -465,6 +489,8 @@ jobs:
               this.items,
               this.elevation,
               this.backgroundColor,
+              this.selectedItemColor,
+              this.unselectedItemColor,
             });
 
             int get _selectedIndex => currentIndex ?? index ?? 0;
@@ -482,13 +508,17 @@ jobs:
                   final isAr = locale.languageCode == 'ar';
                   final isDark = Theme.of(context).brightness == Brightness.dark;
 
-                  final navList = [
-                    {'icon': Icons.grid_view_rounded, 'title': isAr ? 'الرئيسية' : 'Home'},
-                    {'icon': Icons.fact_check_outlined, 'title': isAr ? 'الملاحظات' : 'Observations'},
-                    {'icon': Icons.picture_as_pdf_outlined, 'title': isAr ? 'التقارير' : 'Reports'},
-                    {'icon': Icons.smart_toy_outlined, 'title': isAr ? 'المستشار' : 'Advisor'},
-                    {'icon': Icons.info_outline_rounded, 'title': isAr ? 'حول' : 'About'},
+                  final defaultTitlesAr = ['الرئيسية', 'الملاحظات', 'التقارير', 'المستشار', 'حول'];
+                  final defaultTitlesEn = ['Home', 'Observations', 'Reports', 'Advisor', 'About'];
+                  final defaultIcons = [
+                    Icons.grid_view_rounded,
+                    Icons.fact_check_outlined,
+                    Icons.picture_as_pdf_outlined,
+                    Icons.smart_toy_outlined,
+                    Icons.info_outline_rounded,
                   ];
+
+                  final count = (items != null && items!.isNotEmpty) ? items!.length : 5;
 
                   return Container(
                     decoration: BoxDecoration(
@@ -503,8 +533,25 @@ jobs:
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                         child: Row(
-                          children: List.generate(navList.length, (idx) {
+                          children: List.generate(count, (idx) {
                             final isSelected = _selectedIndex == idx;
+
+                            IconData iconData = defaultIcons[idx % defaultIcons.length];
+                            if (items != null && idx < items!.length) {
+                              final it = items![idx];
+                              if (it is NavTabItem) {
+                                if (isSelected && it.activeIcon is IconData) {
+                                  iconData = it.activeIcon as IconData;
+                                } else if (it.icon is IconData) {
+                                  iconData = it.icon as IconData;
+                                }
+                              }
+                            }
+
+                            final title = isAr
+                                ? (idx < defaultTitlesAr.length ? defaultTitlesAr[idx] : '')
+                                : (idx < defaultTitlesEn.length ? defaultTitlesEn[idx] : '');
+
                             return Expanded(
                               child: InkWell(
                                 onTap: () => _handleTap(idx),
@@ -520,13 +567,13 @@ jobs:
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(
-                                        navList[idx]['icon'] as IconData,
+                                        iconData,
                                         size: isSelected ? 24 : 22,
                                         color: isSelected ? Colors.blueAccent : (isDark ? Colors.white60 : Colors.black54),
                                       ),
                                       const SizedBox(height: 3),
                                       Text(
-                                        navList[idx]['title'] as String,
+                                        title,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -563,24 +610,28 @@ jobs:
                   code = "import 'package:safety_core_ai/core/services/language_controller.dart';\n" + code
 
               if 'LanguageController.currentLocale' not in code:
-                  match = re.search(r'return\s+MaterialApp\s*\(', code)
+                  match = re.search(r'return\s+(MaterialApp(?:\.router)?\s*\()', code)
                   if match:
                       start = match.start()
+                      open_paren = match.end() - 1
                       depth = 1
-                      i = match.end()
+                      i = open_paren + 1
                       while i < len(code) and depth > 0:
                           if code[i] == '(': depth += 1
                           elif code[i] == ')': depth -= 1
                           i += 1
-                      
-                      mat_inner = code[match.end():i-1]
+
+                      mat_inner = code[open_paren+1:i-1]
                       mat_inner_clean = re.sub(r'locale:\s*const\s*Locale\([^)]+\)\s*,?', '', mat_inner)
                       mat_inner_clean = re.sub(r'locale:\s*Locale\([^)]+\)\s*,?', '', mat_inner_clean)
+                      
+                      is_router = 'router' in match.group(1)
+                      mat_call = 'MaterialApp.router' if is_router else 'MaterialApp'
 
                       wrapped = f"""return ValueListenableBuilder<Locale>(
             valueListenable: LanguageController.currentLocale,
             builder: (context, activeLocale, _) {{
-              return MaterialApp(
+              return {mat_call}(
                 locale: activeLocale,
                 {mat_inner_clean.strip()}
               );
@@ -590,7 +641,7 @@ jobs:
                       if tail.startswith(';'):
                           tail = tail[1:]
                       code = code[:start] + wrapped + ';' + tail
-                      print("Attached LanguageController to main.dart")
+                      print("Attached LanguageController to MaterialApp successfully!")
 
               with open(main_path, 'w', encoding='utf-8') as f:
                   f.write(code)
@@ -764,6 +815,6 @@ jobs:
       - name: 12. Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SafetyCoreAI-Production-APK
+          name: SafetyCoreAI-Fixed-Release
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
