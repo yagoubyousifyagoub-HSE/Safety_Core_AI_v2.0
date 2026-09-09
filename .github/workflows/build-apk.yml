@@ -110,9 +110,7 @@ jobs:
                 _controller.text = code;
                 _controller.selection = TextSelection.collapsed(offset: code.length);
                 widget.onChanged?.call(code);
-                if (code.length == widget.length) {
-                  widget.onCompleted?.call(code);
-                }
+                if (code.length == widget.length) widget.onCompleted?.call(code);
                 setState(() {});
               }
             }
@@ -647,7 +645,7 @@ jobs:
                   f.write(code)
           PYEOF
 
-      - name: 9. Diagnostic Gemini Service (Captures Full API Response)
+      - name: 9. Dual-Version (v1 & v1beta) Dynamic Model Discovery Engine
         run: |
           mkdir -p lib/core/services
           cat << 'EOF' > lib/core/services/gemini_advisor_service.dart
@@ -701,42 +699,81 @@ jobs:
               final userPrompt = _extractPrompt(body);
               final promptToSend = userPrompt.isNotEmpty
                   ? userPrompt
-                  : "كيف يتم إعداد نظام تصاريح العمل في الموقع؟";
+                  : "كيف يتم إعداد نظام تصاريح العمل في الموقع وفق معايير السلامة المهنية؟";
 
               final client = HttpClient();
               client.connectionTimeout = const Duration(seconds: 15);
 
-              // اختبار النماذج الأساسية
-              final modelsToTry = [
-                'gemini-2.0-flash',
-                'gemini-1.5-flash-latest',
-                'gemini-1.5-flash',
-                'gemini-pro'
-              ];
+              final discoveredTargets = <String>[];
+              final errorLogs = <String>[];
 
-              String diagnosticDetails = "";
-
-              for (final model in modelsToTry) {
+              // استكشاف النماذج الحية عبر إصداري v1 و v1beta معاً
+              for (final ver in ['v1', 'v1beta']) {
                 try {
-                  final url = Uri.parse("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey");
+                  final listUrl = Uri.parse("https://generativelanguage.googleapis.com/$ver/models?key=$apiKey");
+                  final req = await client.getUrl(listUrl);
+                  req.headers.contentType = ContentType("application", "json", charset: "utf-8");
+                  req.headers.set('x-goog-api-key', apiKey);
+                  final res = await req.close();
+                  final resBody = await res.transform(utf8.decoder).join();
+
+                  if (res.statusCode == 200) {
+                    final json = jsonDecode(resBody);
+                    if (json['models'] is List) {
+                      for (final m in json['models']) {
+                        final name = (m['name'] as String? ?? '').replaceFirst('models/', '');
+                        final methods = m['supportedGenerationMethods'] as List? ?? [];
+                        if (methods.contains('generateContent')) {
+                          discoveredTargets.add("$ver/models/$name");
+                        }
+                      }
+                    }
+                  } else {
+                    errorLogs.add("ListModels ($ver): ${res.statusCode}");
+                  }
+                } catch (e) {
+                  errorLogs.add("ListModels ($ver) error: $e");
+                }
+              }
+
+              // ترتيب الأولويات: النماذج الأحدث والأسرع أولاً
+              discoveredTargets.sort((a, b) {
+                int score(String s) {
+                  if (s.contains('flash')) return 0;
+                  if (s.contains('2.0')) return 1;
+                  if (s.contains('pro')) return 2;
+                  return 3;
+                }
+                return score(a).compareTo(score(b));
+              });
+
+              // قائمة احتياطية في حال تعذر استعلام ListModels
+              final targetsToTry = discoveredTargets.isNotEmpty
+                  ? discoveredTargets
+                  : [
+                      'v1/models/gemini-1.5-flash',
+                      'v1beta/models/gemini-2.0-flash',
+                      'v1beta/models/gemini-1.5-flash-latest',
+                      'v1/models/gemini-1.5-pro',
+                    ];
+
+              for (final target in targetsToTry) {
+                try {
+                  final url = Uri.parse("https://generativelanguage.googleapis.com/$target:generateContent?key=$apiKey");
                   final request = await client.postUrl(url);
                   request.headers.contentType = ContentType("application", "json", charset: "utf-8");
                   request.headers.set('x-goog-api-key', apiKey);
+
+                  // دمج الإرشادات الهندسية لتعمل دون أخطاء على جميع النماذج
+                  final fullPrompt = "أنت استشاري وخبير معتمد في السلامة والصحة المهنية (HSE Advisor). أجب بأسلوب هندسي دقيق وموجز وفق معايير OSHA و ISO 45001 والأنظمة السعودية بلغة عربية احترافية.\n\nالسؤال الميداني: $promptToSend";
 
                   final payload = {
                     "contents": [
                       {
                         "role": "user",
-                        "parts": [{"text": promptToSend}]
+                        "parts": [{"text": fullPrompt}]
                       }
-                    ],
-                    "system_instruction": {
-                      "parts": [
-                        {
-                          "text": "أنت استشاري وخبير معتمد في السلامة والصحة المهنية (HSE Advisor). أجب بأسلوب هندسي دقيق وموجز باللغة العربية."
-                        }
-                      ]
-                    }
+                    ]
                   };
 
                   request.add(utf8.encode(jsonEncode(payload)));
@@ -748,30 +785,33 @@ jobs:
                     final reply = json['candidates']?[0]?['content']?['parts']?[0]?['text'] ?? '';
                     if (reply.isNotEmpty) {
                       return FunctionResponse(
-                        data: {'reply': reply, 'content': [{'text': reply}]},
+                        data: {
+                          'reply': reply,
+                          'content': [{'text': reply}],
+                          'text': reply,
+                          'message': reply,
+                        },
                         status: 200,
                       );
                     }
                   } else {
-                    // تسجيل رمز الخطأ والنص القادم من جوجل بدقة
-                    diagnosticDetails = "Google API HTTP [${response.statusCode}] on ($model):\n$responseBody";
+                    errorLogs.add("[$target] HTTP ${response.statusCode}: $responseBody");
                   }
                 } catch (e) {
-                  diagnosticDetails = "Network/Client Exception: $e";
+                  errorLogs.add("[$target] Exception: $e");
                 }
               }
 
-              // طباعة تفاصيل الخطأ مباشرة في فقاعة المحادثة
-              final errorReply = diagnosticDetails.isNotEmpty
-                  ? diagnosticDetails
-                  : "تعذر الحصول على رد من الخادم. يرجى مراجعة إعدادات الشبكة.";
+              final fallbackMsg = errorLogs.isNotEmpty
+                  ? errorLogs.last
+                  : "تعذر الحصول على رد حالياً، يرجى المحاولة مرة أخرى.";
 
               return FunctionResponse(
                 data: {
-                  'reply': errorReply,
-                  'content': [{'text': errorReply}],
-                  'text': errorReply,
-                  'message': errorReply,
+                  'reply': fallbackMsg,
+                  'content': [{'text': fallbackMsg}],
+                  'text': fallbackMsg,
+                  'message': fallbackMsg,
                 },
                 status: 200,
               );
@@ -827,6 +867,6 @@ jobs:
       - name: 12. Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SafetyCoreAI-Diag-Release
+          name: SafetyCoreAI-Live-Advisor
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
